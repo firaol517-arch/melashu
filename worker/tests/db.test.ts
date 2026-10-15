@@ -41,7 +41,10 @@ describe("row-level security / permissions", () => {
     expect((await as(B, "select id from sec_customers")).rows).toHaveLength(0);
     expect((await as(B, "select id from sec_businesses")).rows.map((r: any) => r.id)).toEqual([bizB]);
   });
-  it("anonymous users see nothing", async () => expect((await as(null, "select id from sec_businesses")).rows).toHaveLength(0));
+  it("anonymous users see nothing (empty or denied)", async () => {
+    const rows = await as(null, "select id from sec_businesses").then((r) => r.rows, () => []);
+    expect(rows).toHaveLength(0);
+  });
   it("another user cannot modify my conversation", async () => {
     await as(B, `update sec_conversations set ai_paused=true where id='${convA}'`);
     expect((await db.query<any>(`select ai_paused from sec_conversations where id='${convA}'`)).rows[0].ai_paused).toBe(false);

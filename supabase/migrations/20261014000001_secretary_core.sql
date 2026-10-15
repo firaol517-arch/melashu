@@ -242,3 +242,8 @@ grant update (notes, interests, followup_status, is_blocked) on sec_customers to
 -- settings: read-only from the browser. Changes go through /api/settings so that going live
 -- is gated by the launch checklist and emergency stop is always honoured.
 revoke insert, update, delete on sec_settings from authenticated, anon;
+
+-- ───────────── function hardening ─────────────
+alter function sec_touch() set search_path = public;
+revoke execute on function sec_owns(uuid) from public, anon;
+grant execute on function sec_owns(uuid) to authenticated;
