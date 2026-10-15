@@ -143,15 +143,25 @@ ${kb}`;
 /** Minimal chat client surface so tests can inject a fake. */
 export type ChatClient = { chat: { completions: { create: (a: any) => Promise<{ choices: { message: { content: string | null } }[] }> } } };
 
-export async function generateDecision(client: ChatClient, o: Parameters<typeof buildMessages>[0] & { model: string }): Promise<Decision> {
+/** Models sometimes wrap JSON in ```fences``` or add prose; pull out the first balanced {...} object. */
+export function extractJson(raw: string): unknown {
+  const t = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try { return JSON.parse(t); } catch {}
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a >= 0 && b > a) return JSON.parse(t.slice(a, b + 1));
+  throw new Error("no_json");
+}
+
+/** jsonMode=false for OpenAI-compatible providers (e.g. Gemini) that don't document response_format json_object. */
+export async function generateDecision(client: ChatClient, o: Parameters<typeof buildMessages>[0] & { model: string; jsonMode?: boolean }): Promise<Decision> {
   let raw: string | null = null;
   try {
-    const r = await client.chat.completions.create({ model: o.model, temperature: 0.3, response_format: { type: "json_object" }, messages: buildMessages(o) });
+    const r = await client.chat.completions.create({ model: o.model, temperature: 0.3, ...(o.jsonMode === false ? {} : { response_format: { type: "json_object" } }), messages: buildMessages(o) });
     raw = r.choices[0]?.message?.content ?? null;
   } catch { return { action: "flag", reason: "ai_provider_error" }; }
   if (!raw) return { action: "flag", reason: "ai_empty_response" };
   let parsed;
-  try { parsed = ReplySchema.safeParse(JSON.parse(raw)); } catch { return { action: "flag", reason: "ai_invalid_json" }; }
+  try { parsed = ReplySchema.safeParse(extractJson(raw)); } catch { return { action: "flag", reason: "ai_invalid_json" }; }
   if (!parsed.success) return { action: "flag", reason: "ai_schema_violation" };
   return validateReply(parsed.data, { knowledge: o.knowledge, customerText: o.incoming + " " + o.history.map((h) => h.text).join(" ") });
 }

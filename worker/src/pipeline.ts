@@ -12,7 +12,7 @@ export type Incoming = {
 export type Sender = (a: { businessId: string; tgChatId: number; accessHash?: string; chatKind: string; text: string }) => Promise<{ tgMessageId: number }>;
 export type Typing = (a: { businessId: string; tgChatId: number; accessHash?: string }) => Promise<void>;
 
-const openai = config.openaiKey ? new OpenAI({ apiKey: config.openaiKey }) : null;
+const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl }) : null;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Per-chat serialization so two messages in one chat never race each other.
@@ -86,7 +86,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   const history = (hist ?? []).reverse().slice(0, -1).map((h) => ({ role: (h.sender === "customer" ? "customer" : "us") as "customer" | "us", text: h.body }));
   const knowledge = retrieveKnowledge(m.text, kb ?? []);
   const decision = await generateDecision(openai as any, { businessName: biz.name, businessType: biz.business_type, tone: biz.tone,
-    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, model: again.st.ai_model });
+    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });
 
   if (decision.action === "flag") {
     await db.from("sec_conversations").update({ needs_attention: true, attention_reason: decision.reason }).eq("id", conv.id);

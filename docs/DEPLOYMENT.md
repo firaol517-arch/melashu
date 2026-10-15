@@ -23,13 +23,15 @@ Never commit `.env` files. Templates: `web/.env.example`, `worker/.env.example`.
 ## 3. Web on Vercel
 - Root directory: `web`. Framework: Next.js. Build command `next build`.
 - Environment variables: everything in `web/.env.example`. Only `NEXT_PUBLIC_*` values are exposed to browsers.
-  `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_ENC_KEY`, `OPENAI_API_KEY` are server-only.
+  `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_ENC_KEY`, `AI_API_KEY` are server-only.
+  AI provider: any OpenAI-compatible API. Default Gemini (free key at https://aistudio.google.com/apikey) with `AI_BASE_URL`, `AI_MODEL` as in `.env.example`.
+  **Privacy:** Google's free tier may use content to improve products and allows human review. For real customer data use a paid/billed key or another provider.
 - After deploy open `https://<your-app>/api/health` → expect `{"ok":true,...}` (HTTP 503 and a list of what is missing otherwise).
 
 ## 4. Worker on Render
 - New → Blueprint → select this repo (uses `render.yaml`), or create a Docker worker with root dir `worker`.
 - Use a plan that never sleeps. A sleeping worker means no replies.
-- Set the four env vars from `worker/.env.example`.
+- Set the env vars from `worker/.env.example` (same `SESSION_ENC_KEY` and AI settings as the web app).
 - Health: `GET /healthz` (port 8080) returns 200 while the polling loop is alive. Logs: Render dashboard → Logs
   (message text, phone numbers, codes and sessions are never logged).
 - Run **one** worker instance only for a given Telegram account.

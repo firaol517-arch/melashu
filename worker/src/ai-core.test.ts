@@ -63,3 +63,15 @@ describe("generateDecision error recovery", () => {
   it("sends a valid structured reply", async () =>
     expect(await generateDecision(fake(JSON.stringify({ reply: "Hello! How can I help?", language: "en", confidence: 0.9, needs_human: false })), args)).toMatchObject({ action: "send" }));
 });
+
+import { extractJson } from "./ai-core.js";
+describe("extractJson (provider output quirks)", () => {
+  it("parses fenced JSON", () => expect(extractJson('```json\n{"a":1}\n```')).toEqual({ a: 1 }));
+  it("parses JSON surrounded by prose", () => expect(extractJson('Here you go: {"a":2} thanks')).toEqual({ a: 2 }));
+  it("throws when there is no JSON", () => expect(() => extractJson("sorry")).toThrow());
+  it("decision works without json mode and with fenced output", async () => {
+    const fenced = '```json\n' + JSON.stringify({ reply: "ሰላም! እንዴት ልርዳዎት?", language: "am", confidence: 0.9, needs_human: false }) + '\n```';
+    const fake = { chat: { completions: { create: async (a: any) => { if ("response_format" in a) throw new Error("json mode must be off"); return { choices: [{ message: { content: fenced } }] }; } } } };
+    expect(await generateDecision(fake, { businessName: "B", businessType: "", tone: "t", rules: "", hours: "", languageMode: "match", knowledge: [], history: [], incoming: "ሰላም", model: "m", jsonMode: false })).toMatchObject({ action: "send" });
+  });
+});
