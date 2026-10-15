@@ -17,7 +17,7 @@ export default function Login() {
       ? await sb.auth.signInWithPassword({ email, password })
       : await sb.auth.signUp({ email, password });
     setBusy(false);
-    if (error) return setMsg({ ok: false, text: error.message });
+    if (error) return setMsg({ ok: false, text: /invalid api key/i.test(error.message) ? "Server setup problem: the public Supabase key is wrong or outdated. Open /api/health for the exact cause." : error.message });
     if (mode === "up" && !data.session) return setMsg({ ok: true, text: "Check your email to confirm your account, then sign in." });
     router.replace("/"); router.refresh();
   }
