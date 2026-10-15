@@ -1,0 +1,115 @@
+import OpenAI from "openai";
+import { db, audit } from "./db.js";
+import { config } from "./config.js";
+import { log } from "./log.js";
+import { checkEligibility, generateDecision, retrieveKnowledge, type Settings } from "./ai-core.js";
+
+export type Incoming = {
+  businessId: string; tgChatId: number; tgAccessHash?: string; tgUserId: number; tgMessageId: number;
+  chatKind: "private" | "group" | "channel"; text: string; name: string; username?: string; isContact: boolean;
+  fromSelf: boolean; isBot: boolean;
+};
+export type Sender = (a: { businessId: string; tgChatId: number; accessHash?: string; chatKind: string; text: string }) => Promise<{ tgMessageId: number }>;
+export type Typing = (a: { businessId: string; tgChatId: number; accessHash?: string }) => Promise<void>;
+
+const openai = config.openaiKey ? new OpenAI({ apiKey: config.openaiKey }) : null;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Per-chat serialization so two messages in one chat never race each other.
+const chains = new Map<string, Promise<unknown>>();
+export function serialize<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = chains.get(key) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(fn);
+  chains.set(key, next);
+  next.finally(() => { if (chains.get(key) === next) chains.delete(key); }).catch(() => {});
+  return next;
+}
+
+export async function handleIncoming(m: Incoming, send: Sender, typing: Typing) {
+  if (m.fromSelf || m.isBot) return;                       // never process own messages or bots
+  return serialize(`${m.businessId}:${m.tgChatId}`, () => process_(m, send, typing));
+}
+
+async function process_(m: Incoming, send: Sender, typing: Typing) {
+  // 1) Upsert customer + conversation
+  const { data: customer } = await db.from("sec_customers").upsert(
+    { business_id: m.businessId, tg_user_id: m.tgUserId, display_name: m.name, username: m.username ?? null, is_contact: m.isContact, last_contact_at: new Date().toISOString() },
+    { onConflict: "business_id,tg_user_id" }).select("id,is_contact,is_blocked").single();
+  if (!customer) return log.error({ businessId: m.businessId }, "customer upsert failed");
+  const { data: conv } = await db.from("sec_conversations").upsert(
+    { business_id: m.businessId, customer_id: customer.id, tg_chat_id: m.tgChatId, chat_kind: m.chatKind, tg_access_hash: m.tgAccessHash ?? null },
+    { onConflict: "business_id,tg_chat_id" }).select("*").single();
+  if (!conv) return log.error({ businessId: m.businessId }, "conversation upsert failed");
+
+  // 2) Deduplicate: unique(conversation_id, tg_message_id). A replay or reconnect re-delivery is dropped here.
+  const { data: inserted, error } = await db.from("sec_messages").insert({
+    business_id: m.businessId, conversation_id: conv.id, tg_message_id: m.tgMessageId, direction: "in", sender: "customer",
+    body: m.text || "[non-text message]", status: "received" }).select("id").single();
+  if (error) { if (error.code === "23505") return log.debug("duplicate message ignored"); return log.error({ code: error.code }, "message insert failed"); }
+  await db.from("sec_conversations").update({ unread_count: (conv.unread_count ?? 0) + 1, last_message_at: new Date().toISOString(),
+    last_message_preview: (m.text || "[non-text message]").slice(0, 80) }).eq("id", conv.id);
+  if (!m.text) { await db.from("sec_conversations").update({ needs_attention: true, attention_reason: "non_text_message" }).eq("id", conv.id); return; }
+
+  // 3) Eligibility (default-deny)
+  const [{ data: biz }, { data: settings }] = await Promise.all([
+    db.from("sec_businesses").select("name,business_type,tone,business_hours,timezone").eq("id", m.businessId).single(),
+    db.from("sec_settings").select("*").eq("business_id", m.businessId).single(),
+  ]);
+  if (!biz || !settings) return;
+  const elig = async () => {
+    const since = new Date(Date.now() - 3600_000).toISOString();
+    const { count } = await db.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", m.businessId)
+      .eq("sender", "ai").in("status", ["sent", "dry_run"]).gte("created_at", since);
+    const { data: c } = await db.from("sec_conversations").select("*").eq("id", conv.id).single();
+    const { data: cu } = await db.from("sec_customers").select("is_contact,is_blocked").eq("id", customer.id).single();
+    const { data: st } = await db.from("sec_settings").select("*").eq("business_id", m.businessId).single();
+    return { st: st as Settings, res: checkEligibility({ settings: st as Settings, conv: c!, customer: cu!, tz: biz.timezone, repliesLastHour: count ?? 0 }) };
+  };
+  const first = await elig();
+  if (!first.res.ok) { await audit(m.businessId, "ai.skipped", { reason: first.res.reason }); return; }
+  if (!openai) { await audit(m.businessId, "ai.skipped", { reason: "ai_not_configured" }); return; }
+
+  // 4) Human-like delay, then re-check: settings/takeover may have changed meanwhile
+  if (settings.reply_delay_seconds) { await typing({ businessId: m.businessId, tgChatId: m.tgChatId, accessHash: m.tgAccessHash }).catch(() => {}); await sleep(settings.reply_delay_seconds * 1000); }
+  const again = await elig();
+  if (!again.res.ok) { await audit(m.businessId, "ai.skipped", { reason: again.res.reason, phase: "recheck" }); return; }
+  // If the owner already replied by hand in the last 2 minutes, stay out of the way.
+  const { count: ownerRecent } = await db.from("sec_messages").select("id", { count: "exact", head: true })
+    .eq("conversation_id", conv.id).eq("sender", "owner").gte("created_at", new Date(Date.now() - 120_000).toISOString());
+  if (ownerRecent) { await audit(m.businessId, "ai.skipped", { reason: "owner_active" }); return; }
+
+  // 5) Generate + validate
+  const [{ data: kb }, { data: hist }] = await Promise.all([
+    db.from("sec_knowledge").select("id,kind,title,content").eq("business_id", m.businessId).eq("active", true).limit(300),
+    db.from("sec_messages").select("sender,body").eq("conversation_id", conv.id).neq("status", "failed").order("created_at", { ascending: false }).limit(11),
+  ]);
+  const history = (hist ?? []).reverse().slice(0, -1).map((h) => ({ role: (h.sender === "customer" ? "customer" : "us") as "customer" | "us", text: h.body }));
+  const knowledge = retrieveKnowledge(m.text, kb ?? []);
+  const decision = await generateDecision(openai as any, { businessName: biz.name, businessType: biz.business_type, tone: biz.tone,
+    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, model: again.st.ai_model });
+
+  if (decision.action === "flag") {
+    await db.from("sec_conversations").update({ needs_attention: true, attention_reason: decision.reason }).eq("id", conv.id);
+    await audit(m.businessId, "ai.flagged", { reason: decision.reason });
+    return;
+  }
+
+  // 6) Idempotent reply row FIRST: unique(reply_to_message_id) guarantees we never answer the same message twice.
+  const dry = again.st.dry_run;
+  const { data: out, error: e2 } = await db.from("sec_messages").insert({ business_id: m.businessId, conversation_id: conv.id, direction: "out",
+    sender: "ai", body: decision.reply, status: dry ? "dry_run" : "sending", reply_to_message_id: inserted.id, ai_meta: decision.meta }).select("id").single();
+  if (e2) { if (e2.code === "23505") return log.debug("already replied"); return log.error({ code: e2.code }, "reply insert failed"); }
+  if (dry) { await audit(m.businessId, "ai.dry_run_reply"); return; }
+
+  // 7) Send, and only mark 'sent' when Telegram returns a message id.
+  try {
+    const r = await send({ businessId: m.businessId, tgChatId: m.tgChatId, accessHash: m.tgAccessHash, chatKind: m.chatKind, text: decision.reply });
+    await db.from("sec_messages").update({ status: "sent", tg_message_id: r.tgMessageId, sent_at: new Date().toISOString() }).eq("id", out.id);
+    await db.from("sec_conversations").update({ unread_count: 0, last_message_at: new Date().toISOString(), last_message_preview: decision.reply.slice(0, 80) }).eq("id", conv.id);
+    await audit(m.businessId, "ai.reply_sent");
+  } catch (err: any) {
+    await db.from("sec_messages").update({ status: "failed", error: String(err?.errorMessage ?? err?.message ?? "send_failed").slice(0, 200) }).eq("id", out.id);
+    await db.from("sec_conversations").update({ needs_attention: true, attention_reason: "send_failed" }).eq("id", conv.id);
+    await audit(m.businessId, "ai.send_failed", { error: String(err?.errorMessage ?? "send_failed").slice(0, 100) });
+  }
+}

@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cream: #f6f1e7;
+  --color-ivory: #fbf8f1;
+  --color-sand: #ece5d4;
+  --color-line: #e4dcc8;
+  --color-forest: #0f2a20;
+  --color-forest-2: #1c3d30;
+  --color-sage: #7f9488;
+  --color-gold: #b08a45;
+  --color-gold-soft: #d4b886;
+  --color-leaf: #2f9e7a;
+  --color-danger: #b4432f;
+  --font-serif: "Newsreader", "Noto Serif Ethiopic", Georgia, serif;
+  --font-sans: "Inter", "Noto Sans Ethiopic", system-ui, sans-serif;
+}
+html { background: var(--color-ivory); color: var(--color-forest); }
+body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+.font-display { font-family: var(--font-serif); }
+.card { background: #fff; border: 1px solid var(--color-line); border-radius: 28px; }
+.eyebrow { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--color-gold); }
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; border-radius:999px; padding:.8rem 1.4rem; font-weight:600; transition:.15s; cursor:pointer; }
+.btn-primary { background: var(--color-forest); color: var(--color-cream); }
+.btn-primary:hover { background: var(--color-forest-2); }
+.btn-gold { background: var(--color-gold-soft); color: var(--color-forest); }
+.btn-ghost { border:1px solid var(--color-line); background:#fff; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.input { width:100%; border:1px solid var(--color-line); background:#fff; border-radius:18px; padding:.8rem 1rem; outline:none; }
+.input:focus { border-color: var(--color-gold); box-shadow: 0 0 0 3px rgba(176,138,69,.15); }
+:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
