@@ -27,12 +27,17 @@ async function anonKeyCheck() {
 }
 
 export async function GET(req: Request) {
-  let db = false;
-  try { const { error } = await supabaseAdmin().from("sec_businesses").select("id", { head: true, count: "exact" }).limit(1); db = !error; } catch {}
+  // NOTE: do not use head:true here — supabase-js swallows errors on HEAD requests and would report a false "ok".
+  let db = false, dbError: string | null = null;
+  try { const { error } = await supabaseAdmin().from("sec_businesses").select("id").limit(1); db = !error; dbError = error ? (error.code ?? error.message ?? "error").toString().slice(0, 60) : null; }
+  catch (e: any) { dbError = String(e?.message ?? "exception").slice(0, 60); }
+  const urlRef = (() => { try { return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname.split(".")[0]; } catch { return ""; } })();
+  let serviceRoleRef: string | null = null;
+  try { serviceRoleRef = JSON.parse(Buffer.from((process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").split(".")[1], "base64url").toString()).ref ?? null; } catch {}
   const env = { supabase: !!process.env.NEXT_PUBLIC_SUPABASE_URL, serviceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
     encryptionKey: !!process.env.SESSION_ENC_KEY, ai: !!(process.env.AI_API_KEY || process.env.OPENAI_API_KEY) };
   const anon = await anonKeyCheck();
   const ok = db && Object.values(env).every(Boolean) && anon.supabaseAuthStatus === 200;
   const debug = new URL(req.url).searchParams.get("debug") === "1";   // debug=1 always answers 200 so tools that hide error bodies can read it
-  return NextResponse.json({ ok, db, env, anonKey: anon }, { status: ok || debug ? 200 : 503 });
+  return NextResponse.json({ ok, db, dbError, urlRef, serviceRoleProjectMatchesUrl: serviceRoleRef === null ? "n/a" : serviceRoleRef === urlRef, env, anonKey: anon }, { status: ok || debug ? 200 : 503 });
 }
