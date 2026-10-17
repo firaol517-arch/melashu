@@ -69,7 +69,12 @@ export default function TelegramSetup() {
           <button className="btn btn-primary w-full" disabled={busy}>Send login code</button>
         </form>
       )}
-      {status === "connecting" && <p className="card p-6 text-sm">Requesting your code from Telegram…</p>}
+      {status === "connecting" && (
+        <div className="card space-y-3 p-6 text-sm">
+          <p>Connecting to Telegram… (if this takes more than a minute, the worker may be asleep or offline)</p>
+          <button className="btn btn-ghost" disabled={busy} onClick={() => call("/api/telegram/disconnect")}>Cancel and start over</button>
+        </div>
+      )}
       {status === "awaiting_code" && (
         <form className="card space-y-4 p-6" onSubmit={(e) => { e.preventDefault(); call("/api/telegram/code", { code }); setCode(""); }}>
           <p className="font-semibold">2 · Enter the code Telegram sent you</p>
