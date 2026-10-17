@@ -4,7 +4,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 function key(): Buffer {
   const raw = process.env.SESSION_ENC_KEY;
   if (!raw) throw new Error("SESSION_ENC_KEY is not configured");
-  const k = Buffer.from(raw.trim().replace(/^['"`]+|['"`]+$/g, ""), "base64");   // tolerate pasted quotes/whitespace
+  const k = Buffer.from(raw.replace(/\s+/g, "").replace(/^['"`]+|['"`]+$/g, ""), "base64");   // tolerate pasted quotes/whitespace
   if (k.length !== 32) throw new Error("SESSION_ENC_KEY must be 32 bytes (base64)");
   return k;
 }
