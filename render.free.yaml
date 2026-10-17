@@ -1,0 +1,20 @@
+# FREE-tier variant (no payment). Render free web services sleep after ~15 min without
+# inbound HTTP traffic, so an external pinger (e.g. UptimeRobot, 5-min interval) must hit
+# /healthz to keep the Telegram worker awake. Less reliable than a paid always-on plan:
+# use for testing / early pilots, upgrade to render.yaml (starter) before real customers.
+services:
+  - type: web
+    name: secretary-telegram-worker
+    runtime: docker
+    rootDir: worker
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - { key: SUPABASE_URL, sync: false }
+      - { key: SUPABASE_SERVICE_ROLE_KEY, sync: false }
+      - { key: SESSION_ENC_KEY, sync: false }
+      - { key: AI_API_KEY, sync: false }
+      - { key: AI_BASE_URL, value: "https://generativelanguage.googleapis.com/v1beta/openai/" }
+      - { key: AI_MODEL, value: gemini-3.8-flash }
+      - { key: LOG_LEVEL, value: info }
