@@ -1,14 +1,10 @@
-# FREE-tier variant (no payment). Render free web services sleep after ~15 min without
-# inbound HTTP traffic, so an external pinger (e.g. UptimeRobot, 5-min interval) must hit
-# /healthz to keep the Telegram worker awake. Less reliable than a paid always-on plan:
-# use for testing / early pilots, upgrade to render.yaml (starter) before real customers.
+# Render Blueprint (FREE tier, no payment). For production use render.paid.yaml (Starter, always-on).
 services:
-  - type: web
+  - type: worker            # use "web" + healthCheckPath on plans that require it
     name: secretary-telegram-worker
     runtime: docker
     rootDir: worker
-    plan: free
-    healthCheckPath: /healthz
+    plan: starter           # must be an always-on plan; free tier sleeps and would drop Telegram
     autoDeploy: true
     envVars:
       - { key: SUPABASE_URL, sync: false }
