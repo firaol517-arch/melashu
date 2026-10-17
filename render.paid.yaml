@@ -1,4 +1,4 @@
-# Render Blueprint (FREE tier, no payment). For production use render.paid.yaml (Starter, always-on).
+# Render Blueprint, PAID always-on (Starter). Use for real customers; the default render.yaml is the free tier.
 services:
   - type: worker            # use "web" + healthCheckPath on plans that require it
     name: secretary-telegram-worker
