@@ -2,12 +2,13 @@
 import { useEffect, useState } from "react";
 import { api } from "./ui";
 
-type Status = { connection: { status: string; phone_hint: string | null; tg_username: string | null; last_error: string | null; last_heartbeat_at: string | null } | null;
+type Status = { connection: { status: string; mode?: string; phone_hint: string | null; tg_username: string | null; last_error: string | null; last_heartbeat_at: string | null } | null;
   lastRequest: { action: string; status: string; error: string | null } | null; workerOnline: boolean };
 
 export default function TelegramSetup() {
   const [st, setSt] = useState<Status | null>(null);
   const [f, setF] = useState({ api_id: "", api_hash: "", phone: "" });
+  const [mode, setMode] = useState<"bot" | "account">("bot"); const [token, setToken] = useState("");
   const [code, setCode] = useState(""); const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
 
@@ -42,6 +43,24 @@ export default function TelegramSetup() {
       </section>
 
       {["disconnected", "revoked", "error"].includes(status) && (
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" className={`btn ${mode === "bot" ? "btn-primary" : "btn-ghost"}`} onClick={() => setMode("bot")}>Telegram bot (easy)</button>
+          <button type="button" className={`btn ${mode === "account" ? "btn-primary" : "btn-ghost"}`} onClick={() => setMode("account")}>My own account</button>
+        </div>
+      )}
+      {["disconnected", "revoked", "error"].includes(status) && mode === "bot" && (
+        <form className="card space-y-4 p-6" onSubmit={(e) => { e.preventDefault(); call("/api/telegram/bot", { token }); setToken(""); }}>
+          <p className="font-semibold">Connect your Telegram bot</p>
+          <ol className="list-decimal space-y-1 pl-5 text-sm text-sage">
+            <li>In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → choose a name and a username ending in <code>bot</code>.</li>
+            <li>BotFather replies with a <b>token</b> (like <code>123456789:AA…</code>). Paste it below — only here, never in chats.</li>
+            <li>Customers must press <b>Start</b> / message your bot first (Telegram rule). Share the bot link (t.me/yourbot).</li>
+          </ol>
+          <input className="input" type="password" placeholder="Bot token from BotFather" required autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
+          <button className="btn btn-primary w-full" disabled={busy}>Connect bot</button>
+        </form>
+      )}
+      {["disconnected", "revoked", "error"].includes(status) && mode === "account" && (
         <form className="card space-y-4 p-6" onSubmit={(e) => { e.preventDefault(); call("/api/telegram/start", { api_id: f.api_id, api_hash: f.api_hash, phone: f.phone }); }}>
           <p className="font-semibold">1 · Enter your Telegram API details</p>
           <input className="input" inputMode="numeric" placeholder="API ID" required value={f.api_id} onChange={(e) => setF({ ...f, api_id: e.target.value })} />
@@ -68,9 +87,9 @@ export default function TelegramSetup() {
       )}
       {status === "connected" && (
         <section className="card space-y-3 p-6">
-          <p className="font-semibold text-leaf">Connected{st?.connection?.tg_username ? ` as @${st.connection.tg_username}` : ""}.</p>
+          <p className="font-semibold text-leaf">Connected{st?.connection?.tg_username ? ` as @${st.connection.tg_username}` : ""}{st?.connection?.mode === "bot" ? " (bot)" : ""}.</p>
           <p className="text-sm text-sage">Nothing is auto-replied until you finish the launch checklist in AI Secretary. New chats are NOT auto-answered unless you allow-list them.</p>
-          <button className="btn btn-ghost !border-danger text-danger" disabled={busy} onClick={() => confirm("Disconnect and revoke this Telegram session?") && call("/api/telegram/disconnect")}>Disconnect & revoke session</button>
+          <button className="btn btn-ghost !border-danger text-danger" disabled={busy} onClick={() => confirm("Disconnect and revoke this Telegram session?") && call("/api/telegram/disconnect")}>Disconnect</button>
         </section>
       )}
       {msg && <p role="status" className={`text-sm ${msg.ok ? "text-leaf" : "text-danger"}`}>{msg.t}</p>}
