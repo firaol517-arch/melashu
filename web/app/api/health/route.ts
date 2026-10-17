@@ -36,7 +36,7 @@ export async function GET(req: Request) {
   let serviceRoleRef: string | null = null;
   try { serviceRoleRef = JSON.parse(Buffer.from((process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").split(".")[1], "base64url").toString()).ref ?? null; } catch {}
   const env = { supabase: !!process.env.NEXT_PUBLIC_SUPABASE_URL, serviceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-    encryptionKey: !!process.env.SESSION_ENC_KEY, encryptionKeyValid: (() => { try { encrypt("x"); return true; } catch { return false; } })(), ai: !!(process.env.AI_API_KEY || process.env.OPENAI_API_KEY) };
+    encryptionKey: !!process.env.SESSION_ENC_KEY, encryptionKeyValid: (() => { try { encrypt("x"); return true; } catch { return false; } })(), ai: !!(process.env.AI_API_KEY || process.env.OPENAI_API_KEY), aiProvider: { keySource: process.env.AI_API_KEY ? "AI_API_KEY" : process.env.OPENAI_API_KEY ? "OPENAI_API_KEY" : "none", baseUrlSet: !!process.env.AI_BASE_URL, modelSet: !!process.env.AI_MODEL } };
   const anon = await anonKeyCheck();
   const ok = db && Object.values(env).every(Boolean) && anon.supabaseAuthStatus === 200;
   const debug = new URL(req.url).searchParams.get("debug") === "1";   // debug=1 always answers 200 so tools that hide error bodies can read it
