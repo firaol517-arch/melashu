@@ -14,8 +14,19 @@ describe("contact classification", () => {
   const loose = { reply_to_unknown_private: true, reply_to_contacts: true };
   it("holds unclassified chats until the owner decides", () => expect(run({ ...loose, classify_new: true }, open)).toEqual({ ok: false, reason: "awaiting_classification" }));
   it("replies to chats classified as customer", () => expect(run({ classify_new: true }, { ...open, contact_kind: "customer" }).ok).toBe(true));
-  it("never replies to friends, family or ignored chats", () => {
+  it("does not reply to friends, family or ignored chats unless enabled", () => {
     for (const k of ["friend", "family", "ignore"] as const) expect(run({ ...loose, classify_new: true }, { auto_reply_allowed: true, contact_kind: k })).toEqual({ ok: false, reason: "personal_chat" });
+  });
+  it("replies to friends / family only when their toggle is on; ignore never", () => {
+    expect(run({ ...loose, reply_to_friends: true }, { contact_kind: "friend" }).ok).toBe(true);
+    expect(run({ ...loose, reply_to_friends: true }, { contact_kind: "family" }).ok).toBe(false);
+    expect(run({ ...loose, reply_to_family: true }, { contact_kind: "family" }).ok).toBe(true);
+    expect(run({ ...loose, reply_to_friends: true, reply_to_family: true }, { contact_kind: "ignore" }).ok).toBe(false);
+  });
+  it("uses the personal prompt (no business knowledge) for friends", async () => {
+    const { buildMessages } = await import("./ai-core.js");
+    const m = buildMessages({ businessName: "B", businessType: "", tone: "t", rules: "", hours: "", languageMode: "match", knowledge: [], history: [], incoming: "selam", relationship: "friend" });
+    expect(m[0].content).toMatch(/personal assistant/); expect(m[0].content).not.toMatch(/BUSINESS KNOWLEDGE/);
   });
   it("customer still respects pause and quiet rules", () => expect(run({}, { contact_kind: "customer", ai_paused: true })).toMatchObject({ reason: "conversation_paused" }));
 });

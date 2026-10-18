@@ -55,7 +55,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
   const admin = supabaseAdmin(); const id = s.biz.id as string;
   if (action === "me") {
     const [{ data: settings }, { data: conn }, { data: kb }, { data: owner }, { count: tests }] = await Promise.all([
-      admin.from("sec_settings").select("automation_enabled,dry_run,emergency_stop").eq("business_id", id).single(),
+      admin.from("sec_settings").select("automation_enabled,dry_run,emergency_stop,reply_to_friends,reply_to_family").eq("business_id", id).single(),
       admin.from("sec_telegram_connections").select("status,mode,last_heartbeat_at").eq("business_id", id).maybeSingle(),
       admin.from("sec_knowledge").select("id,kind,title,content").eq("business_id", id).eq("active", true).order("created_at"),
       admin.from("sec_owners").select("agreed_at").eq("tg_user_id", s.tg).maybeSingle(),
@@ -125,6 +125,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
     await admin.from("sec_businesses").update({ onboarding_completed: true }).eq("id", id);
     await admin.from("sec_owners").update({ agreed_at: new Date().toISOString() }).eq("tg_user_id", s.tg);
     await log(id, "automation.live_enabled", { via: "mini_app_agreement" });
+    return json({ ok: true });
+  }
+  if (action === "prefs") {
+    const a = z.object({ reply_to_friends: z.boolean().optional(), reply_to_family: z.boolean().optional() }).safeParse(body); if (!a.success) return err("invalid_input");
+    await admin.from("sec_settings").update(a.data).eq("business_id", id);
+    await log(id, "settings.personal_replies", a.data);
     return json({ ok: true });
   }
   if (action === "classify") {

@@ -8,6 +8,7 @@ export type Settings = {
   reply_to_unknown_private: boolean; reply_to_groups: boolean; reply_to_contacts: boolean;
   language_mode: "match" | "am" | "en"; response_rules: string; ai_model: string;
   max_replies_per_hour: number; reply_delay_seconds: number;
+  reply_to_friends?: boolean; reply_to_family?: boolean;   // personal-tone replies to chats classified friend / family
   classify_new?: boolean;      // true → chats without a contact_kind get no reply until the owner classifies them
 };
 export type Conversation = {
@@ -47,9 +48,11 @@ export function checkEligibility(o: {
   if (c.chat_kind === "channel") return { ok: false, reason: "channel" };
   if (c.chat_kind === "group" && !s.reply_to_groups) return { ok: false, reason: "group_not_enabled" };
   if (u.is_blocked) return { ok: false, reason: "customer_blocked" };
-  if (c.contact_kind === "friend" || c.contact_kind === "family" || c.contact_kind === "ignore") return { ok: false, reason: "personal_chat" };
+  if (c.contact_kind === "ignore") return { ok: false, reason: "personal_chat" };
+  if (c.contact_kind === "friend" && !s.reply_to_friends) return { ok: false, reason: "personal_chat" };
+  if (c.contact_kind === "family" && !s.reply_to_family) return { ok: false, reason: "personal_chat" };
   if (!c.contact_kind && s.classify_new) return { ok: false, reason: "awaiting_classification" };
-  const isCustomer = c.contact_kind === "customer";
+  const isCustomer = c.contact_kind === "customer" || c.contact_kind === "friend" || c.contact_kind === "family";   // classified & allowed above
   if (u.is_contact && !s.reply_to_contacts && !c.auto_reply_allowed && !isCustomer) return { ok: false, reason: "personal_contact" };
   if (c.sensitive) return { ok: false, reason: "sensitive_conversation" };
   if (c.ai_paused) return { ok: false, reason: "conversation_paused" };
@@ -117,12 +120,31 @@ export function buildMessages(o: {
   businessName: string; businessType: string; tone: string; rules: string; hours: string;
   languageMode: Settings["language_mode"]; knowledge: Knowledge[];
   history: { role: "customer" | "us"; text: string }[]; incoming: string;
+  relationship?: "customer" | "friend" | "family" | null;
 }) {
   const target = o.languageMode === "match" ? "Reply in the same language as the customer's latest message (Amharic ↔ አማርኛ, English ↔ English)." :
     o.languageMode === "am" ? "Always reply in Amharic (አማርኛ)." : "Always reply in English.";
   const kb = o.knowledge.length
     ? o.knowledge.map((k) => `[#${k.id}] (${k.kind}) ${k.title}: ${k.content}`).join("\n")
     : "(no relevant knowledge found)";
+  if (o.relationship === "friend" || o.relationship === "family") {
+    const who = o.relationship === "family" ? "a family member" : "a friend";
+    const personal = `You are the personal assistant of the account owner, replying on their behalf to ${who}.
+${target}
+Tone: warm, casual, short, natural, like a real Telegram message. You are NOT the owner — never claim to be them; if asked, say you are their assistant.
+STRICT RULES:
+- You know NOTHING about the owner's private life: location, plans, health, money, feelings, relationships, news. Never invent or guess any of it.
+- Allowed: greetings, polite small talk, acknowledging the message, saying the owner will reply personally soon.
+- Anything that asks for a decision, commitment, money, a place/time, news, or help; anything urgent, emotional, or sensitive → needs_human=true.
+- Do not mention any business, prices, or products. Do not share links or numbers.
+Owner's extra rules: ${o.rules || "(none)"}
+Respond ONLY with JSON: {"reply": string, "language": "am"|"en", "confidence": 0..1, "needs_human": boolean, "reason": string, "used_knowledge_ids": []}`;
+    return [
+      { role: "system" as const, content: personal },
+      ...o.history.slice(-10).map((h) => ({ role: (h.role === "customer" ? "user" : "assistant") as "user" | "assistant", content: h.text })),
+      { role: "user" as const, content: o.incoming },
+    ];
+  }
   const system = `You are the customer-facing secretary of "${o.businessName}" (${o.businessType || "business"}).
 Tone: ${o.tone}. Write like a real person on Telegram: short, warm, natural. Never say you are an AI unless asked directly.
 ${target}

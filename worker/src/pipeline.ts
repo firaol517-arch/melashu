@@ -77,7 +77,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     const { data: c } = await db.from("sec_conversations").select("*").eq("id", conv.id).single();
     const { data: cu } = await db.from("sec_customers").select("is_contact,is_blocked").eq("id", customer.id).single();
     const { data: st } = await db.from("sec_settings").select("*").eq("business_id", m.businessId).single();
-    return { st: st as Settings, res: checkEligibility({ settings: st as Settings, conv: c!, customer: cu!, tz: biz.timezone, repliesLastHour: count ?? 0 }) };
+    return { st: st as Settings, kind: (c as any)?.contact_kind ?? null, res: checkEligibility({ settings: st as Settings, conv: c!, customer: cu!, tz: biz.timezone, repliesLastHour: count ?? 0 }) };
   };
   const first = await elig();
   if (!first.res.ok) {
@@ -105,9 +105,10 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     db.from("sec_messages").select("sender,body").eq("conversation_id", conv.id).neq("status", "failed").order("created_at", { ascending: false }).limit(11),
   ]);
   const history = (hist ?? []).reverse().slice(0, -1).map((h) => ({ role: (h.sender === "customer" ? "customer" : "us") as "customer" | "us", text: h.body }));
-  const knowledge = retrieveKnowledge(m.text, kb ?? []);
+  const relationship = again.kind === "friend" || again.kind === "family" ? again.kind : "customer";
+  const knowledge = relationship === "customer" ? retrieveKnowledge(m.text, kb ?? []) : [];
   const decision = await generateDecision(openai as any, { businessName: biz.name, businessType: biz.business_type, tone: biz.tone,
-    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });
+    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });
 
   if (decision.action === "flag") {
     await db.from("sec_conversations").update({ needs_attention: true, attention_reason: decision.reason }).eq("id", conv.id);

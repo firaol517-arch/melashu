@@ -19,7 +19,7 @@ beforeAll(async () => {
     alter default privileges in schema public grant all on tables to anon, authenticated;
     insert into auth.users values ('${A}'),('${B}');`);
   await db.exec(readFileSync(new URL("../../supabase/migrations/20261014000001_secretary_core.sql", import.meta.url), "utf8"));
-  for (const m of ["20261017000001_bot_mode.sql", "20261018000001_platform_bot.sql", "20261019000001_contact_kind.sql"])
+  for (const m of ["20261017000001_bot_mode.sql", "20261018000001_platform_bot.sql", "20261019000001_contact_kind.sql", "20261019000002_personal_replies.sql"])
     await db.exec(readFileSync(new URL(`../../supabase/migrations/${m}`, import.meta.url), "utf8"));
   bizA = (await db.query<any>(`insert into sec_businesses(owner_id,name) values ('${A}','A Shop') returning id`)).rows[0].id;
   bizB = (await db.query<any>(`insert into sec_businesses(owner_id,name) values ('${B}','B Shop') returning id`)).rows[0].id;
