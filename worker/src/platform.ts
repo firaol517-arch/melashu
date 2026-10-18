@@ -113,11 +113,11 @@ const askKeyboard = (convId: string) => ({ inline_keyboard: [
   [{ text: KINDS.r.label, callback_data: `k:${convId}:r` }, { text: KINDS.x.label, callback_data: `k:${convId}:x` }],
 ] });
 
-async function askOwner(businessId: string, convId: string, name: string, preview: string, replying = false) {
+async function askOwner(businessId: string, convId: string, name: string, preview: string, note?: string) {
   const { data } = await db.from("sec_owners").select("bot_chat_id").eq("business_id", businessId).maybeSingle();
   if (!data?.bot_chat_id) return;
   await api(T(), "sendMessage", { chat_id: Number(data.bot_chat_id), reply_markup: askKeyboard(convId),
-    text: `💬 አዲስ ውይይት: ${name}\n"${preview.slice(0, 160)}"\n\nይህ ማን ነው?${replying ? "\nረዳቱ አሁን እንደ ደንበኛ እየመለሰ ነው፤ ጓደኛ ወይም ቤተሰብ ከሆነ ምረጥ።" : "\nደንበኛ ከመረጥክ ብቻ ረዳቱ ይመልሳል።"}` }).catch((e) => log.warn({ err: e?.message }, "ask owner failed"));
+    text: `💬 አዲስ ውይይት: ${name}\n"${preview.slice(0, 160)}"\n\n${note ?? "ይህ ማን ነው? ደንበኛ ከመረጥክ ብቻ ረዳቱ ይመልሳል።"}` }).catch((e) => log.warn({ err: e?.message }, "ask owner failed"));
 }
 
 async function onCallback(q: any) {
@@ -133,8 +133,8 @@ async function onCallback(q: any) {
   await api(T(), "answerCallbackQuery", { callback_query_id: q.id, text: k.label }).catch(() => {});
   const name = conv.sec_customers?.display_name ?? "";
   await api(T(), "editMessageText", { chat_id: q.message?.chat?.id, message_id: q.message?.message_id,
-    text: `${k.label} — ${name}\n${k.kind === "customer" ? "✅ ረዳቱ ለዚህ ሰው በስምህ ይመልሳል።" : "ረዳቱ ለዚህ ሰው አይመልስም።"}` }).catch(() => {});
-  if (k.kind !== "customer") return;
+    text: `${k.label} — ${name}\n${k.kind === "customer" ? "✅ ረዳቱ ለዚህ ሰው በስምህ ይመልሳል።" : k.kind === "ignore" ? "ረዳቱ ለዚህ ሰው አይመልስም።" : "✅ ረዳቱ በግል ቃና ይመልሳል (በ Mini App ከተፈቀደ)።"}` }).catch(() => {});
+  if (k.kind === "ignore") return;
   // The first message arrived before we knew who this was — answer it now.
   const { data: last } = await db.from("sec_messages").select("tg_message_id,body").eq("conversation_id", conv.id).eq("sender", "customer")
     .order("created_at", { ascending: false }).limit(1).maybeSingle();

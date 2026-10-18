@@ -16,7 +16,7 @@ export type Typing = (a: { businessId: string; tgChatId: number; accessHash?: st
 /** Optional owner-notification hook (set by the platform bot). */
 export const hooks = {
   notify: async (_businessId: string, _text: string): Promise<void> => {},
-  ask: async (_businessId: string, _convId: string, _name: string, _preview: string, _replying?: boolean): Promise<void> => {},   // ask the owner who a new chat is
+  ask: async (_businessId: string, _convId: string, _name: string, _preview: string, _note?: string): Promise<void> => {},   // ask the owner who a new chat is
 };
 
 const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl }) : null;
@@ -86,10 +86,17 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     if ((recent?.length ?? 0) <= 6) {
       const c = await classifyContact(openai as any, { name: m.name, username: m.username, businessType: biz.business_type, messages: (recent ?? []).map((r) => r.body).reverse(), model: config.aiModel ?? settings.ai_model, jsonMode: !config.aiBaseUrl });
       if (c.kind !== "unknown" && c.confidence >= 0.75) {
-        await db.from("sec_conversations").update({ contact_kind: c.kind }).eq("id", conv.id);
-        conv.contact_kind = c.kind;
         await audit(m.businessId, "chat.auto_classified", { kind: c.kind, confidence: c.confidence });
-        if (c.kind !== "customer") void hooks.ask(m.businessId, conv.id, m.name, `🤖 ${c.kind === "family" ? "ቤተሰብ" : "ጓደኛ"} መስሎኝ ለየሁት። ልክ ካልሆነ ቀይረው፦\n"${m.text.slice(0, 120)}"`).catch(() => {});
+        if (c.kind === "customer") { await db.from("sec_conversations").update({ contact_kind: "customer" }).eq("id", conv.id); conv.contact_kind = "customer"; }
+        else {
+          // Looks personal: hold the reply and let the owner confirm the category ONCE; after that every reply is automatic.
+          if (!conv.classify_prompted_at) {
+            await db.from("sec_conversations").update({ classify_prompted_at: new Date().toISOString() }).eq("id", conv.id);
+            void hooks.ask(m.businessId, conv.id, m.name, m.text, `🤖 ${c.kind === "family" ? "ቤተሰብ" : "ጓደኛ"} መስሎኛል። ማን እንደሆነ አረጋግጥ (አንድ ጊዜ ብቻ፤ ከዚያ በኋላ ራሱ ይመልሳል)።`).catch(() => {});
+          }
+          await audit(m.businessId, "ai.skipped", { reason: "awaiting_confirmation" });
+          return;
+        }
       }
     }
   }
@@ -103,10 +110,10 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     return { st: st as Settings, kind: (c as any)?.contact_kind ?? null, res: checkEligibility({ settings: st as Settings, conv: c!, customer: cu!, tz: biz.timezone, repliesLastHour: count ?? 0 }) };
   };
   const first = await elig();
-  // Who is this? Ask the owner once per chat — even when we answer right away (classify_new=false), so a friend/family chat can be switched off.
-  if (!conv.contact_kind && !conv.classify_prompted_at) {
+  // Who is this? Only in "hold" mode (classify_new) do we ask about chats the AI could not place; otherwise unclear chats get a normal reply.
+  if (!conv.contact_kind && !conv.classify_prompted_at && first.st.classify_new) {
     await db.from("sec_conversations").update({ classify_prompted_at: new Date().toISOString() }).eq("id", conv.id);
-    void hooks.ask(m.businessId, conv.id, m.name, m.text, first.res.ok).catch(() => {});
+    void hooks.ask(m.businessId, conv.id, m.name, m.text).catch(() => {});
   }
   if (!first.res.ok) { await audit(m.businessId, "ai.skipped", { reason: first.res.reason }); return; }
   if (!openai) { await audit(m.businessId, "ai.skipped", { reason: "ai_not_configured" }); return; }
