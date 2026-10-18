@@ -121,9 +121,12 @@ export function buildMessages(o: {
   languageMode: Settings["language_mode"]; knowledge: Knowledge[];
   history: { role: "customer" | "us"; text: string }[]; incoming: string;
   relationship?: "customer" | "friend" | "family" | null;
+  styleExamples?: string[];     // the owner's own past replies — imitate tone/length/greetings, never copy facts
 }) {
   const target = o.languageMode === "match" ? "Reply in the same language as the customer's latest message (Amharic ↔ አማርኛ, English ↔ English)." :
     o.languageMode === "am" ? "Always reply in Amharic (አማርኛ)." : "Always reply in English.";
+  const style = o.styleExamples?.length
+    ? `\nOWNER'S OWN PAST REPLIES (imitate their tone, length, greeting and sign-off habits only; these are NOT facts and must not be reused as information):\n${o.styleExamples.map((e) => `- ${e.replace(/\s+/g, " ").slice(0, 280)}`).join("\n")}\n` : "";
   const kb = o.knowledge.length
     ? o.knowledge.map((k) => `[#${k.id}] (${k.kind}) ${k.title}: ${k.content}`).join("\n")
     : "(no relevant knowledge found)";
@@ -137,7 +140,7 @@ STRICT RULES:
 - Allowed: greetings, polite small talk, acknowledging the message, saying the owner will reply personally soon.
 - Anything that asks for a decision, commitment, money, a place/time, news, or help; anything urgent, emotional, or sensitive → needs_human=true.
 - Do not mention any business, prices, or products. Do not share links or numbers.
-Owner's extra rules: ${o.rules || "(none)"}
+Owner's extra rules: ${o.rules || "(none)"}${style}
 Respond ONLY with JSON: {"reply": string, "language": "am"|"en", "confidence": 0..1, "needs_human": boolean, "reason": string, "used_knowledge_ids": []}`;
     return [
       { role: "system" as const, content: personal },
@@ -154,7 +157,7 @@ STRICT RULES:
 - Never promise anything (delivery, refunds, availability) unless the knowledge states it.
 - Do not share links or numbers that are not in the knowledge.
 - Complaints, payments, legal, medical, or anything sensitive → needs_human=true.
-Owner's extra rules: ${o.rules || "(none)"}
+Owner's extra rules: ${o.rules || "(none)"}${style}
 Business hours: ${o.hours || "(not set)"}
 Respond ONLY with JSON: {"reply": string, "language": "am"|"en", "confidence": 0..1, "needs_human": boolean, "reason": string, "used_knowledge_ids": string[]}
 

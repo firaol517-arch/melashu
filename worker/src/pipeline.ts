@@ -32,6 +32,16 @@ export function serialize<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
+/** The owner's own earlier replies (stored since connection) become style examples: same chat first, then chats of the same kind. */
+async function ownerStyle(businessId: string, convId: string, rel: "customer" | "friend" | "family"): Promise<string[]> {
+  const ok = (t: string) => t.length >= 3 && t.length <= 280 && t !== "[non-text]";
+  const { data: same } = await db.from("sec_messages").select("body").eq("conversation_id", convId).eq("sender", "owner").order("created_at", { ascending: false }).limit(6);
+  const { data: ids } = await db.from("sec_conversations").select("id").eq("business_id", businessId).eq("contact_kind", rel).neq("id", convId).limit(100);
+  let other: { body: string }[] = [];
+  if (ids?.length) ({ data: other = [] } = await db.from("sec_messages").select("body").in("conversation_id", ids.map((i) => i.id)).eq("sender", "owner").order("created_at", { ascending: false }).limit(10) as any);
+  return [...new Set([...(same ?? []), ...other].map((r) => r.body).filter(ok))].slice(0, 10);
+}
+
 export async function handleIncoming(m: Incoming, send: Sender, typing: Typing) {
   if (m.fromSelf || m.isBot) return;                       // never process own messages or bots
   return serialize(`${m.businessId}:${m.tgChatId}`, () => process_(m, send, typing));
@@ -106,9 +116,10 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   ]);
   const history = (hist ?? []).reverse().slice(0, -1).map((h) => ({ role: (h.sender === "customer" ? "customer" : "us") as "customer" | "us", text: h.body }));
   const relationship = again.kind === "friend" || again.kind === "family" ? again.kind : "customer";
+  const styleExamples = await ownerStyle(m.businessId, conv.id, relationship);
   const knowledge = relationship === "customer" ? retrieveKnowledge(m.text, kb ?? []) : [];
   const decision = await generateDecision(openai as any, { businessName: biz.name, businessType: biz.business_type, tone: biz.tone,
-    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });
+    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, styleExamples, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });
 
   if (decision.action === "flag") {
     await db.from("sec_conversations").update({ needs_attention: true, attention_reason: decision.reason }).eq("id", conv.id);
