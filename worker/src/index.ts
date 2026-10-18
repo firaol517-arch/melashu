@@ -1,7 +1,7 @@
 import http from "node:http";
 import { config } from "./config.js";
 import { log } from "./log.js";
-import { startPlatform } from "./platform.js";
+import { startPlatform, platformStatus } from "./platform.js";
 import { resumeAll, pollAuthRequests, pollOutbox, heartbeat, liveCount } from "./tg.js";
 
 const started = Date.now();
@@ -12,7 +12,7 @@ http.createServer((req, res) => {
   if (req.url === "/healthz") {
     const healthy = Date.now() - lastLoop < 30_000;
     res.writeHead(healthy ? 200 : 503, { "content-type": "application/json" });
-    return res.end(JSON.stringify({ ok: healthy, clients: liveCount(), uptimeSec: Math.round((Date.now() - started) / 1000) }));
+    return res.end(JSON.stringify({ ok: healthy, clients: liveCount(), uptimeSec: Math.round((Date.now() - started) / 1000), platform: platformStatus() }));
   }
   res.writeHead(404).end();
 }).listen(config.port, () => log.info({ port: config.port }, "worker health endpoint up"));

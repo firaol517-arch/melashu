@@ -11,6 +11,8 @@ type Conn = { bcId: string; businessId: string; userId: number; canReply: boolea
 const byBc = new Map<string, Conn>();
 const bcOfBiz = new Map<string, string>();
 let stop = false, running = false, offset = 0, username = "";
+const st = { bot: "", lastPollAt: 0, lastUpdateAt: 0, lastError: "" };
+export const platformStatus = () => ({ running, bot: st.bot || username, pollAgoSec: st.lastPollAt ? Math.round((Date.now() - st.lastPollAt) / 1000) : null, updateAgoSec: st.lastUpdateAt ? Math.round((Date.now() - st.lastUpdateAt) / 1000) : null, lastError: st.lastError || null });
 export const platformCount = () => (running ? bcOfBiz.size : 0);
 export const hasPlatform = (businessId: string) => running && bcOfBiz.has(businessId);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -106,8 +108,9 @@ async function loop() {
   while (!stop) {
     try {
       const updates = await api<any[]>(T(), "getUpdates", { offset, timeout: 25, allowed_updates: ["message", "business_connection", "business_message"] }, 40_000);
-      failures = 0;
+      failures = 0; st.lastPollAt = Date.now(); st.lastError = "";
       for (const u of updates) {
+        st.lastUpdateAt = Date.now(); log.info({ id: u.update_id, kind: u.business_message ? "business_message" : u.business_connection ? "business_connection" : "message" }, "platform update");
         offset = u.update_id + 1;
         try {
           if (u.business_connection) await registerConnection(u.business_connection);
@@ -117,7 +120,7 @@ async function loop() {
       }
       if (Date.now() - lastBeat > 30_000) { lastBeat = Date.now(); await db.from("sec_telegram_connections").update({ last_heartbeat_at: new Date().toISOString(), last_error: null }).eq("mode", "business").eq("status", "connected"); }
     } catch (e: any) {
-      failures++; log.warn({ err: e?.message, code: e?.code, failures }, "platform poll failed");
+      failures++; st.lastError = String(e?.message ?? e).slice(0, 120); log.warn({ err: e?.message, code: e?.code, failures }, "platform poll failed");
       if (e?.code === 401) { running = false; log.error("PLATFORM_BOT_TOKEN rejected by Telegram"); return; }
       await sleep(Math.min(60_000, 1000 * 2 ** Math.min(failures, 6)));       // 409 = another instance polling; back off until it exits
     }
