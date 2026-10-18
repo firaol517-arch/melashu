@@ -50,3 +50,14 @@ Follow `docs/LAUNCH_CHECKLIST.md`. The server refuses to enable live replies unt
 - **Emergency stop**: AI Secretary → Emergency stop (takes effect on the next incoming message, and re-checked right before every send).
 - **Rotating `SESSION_ENC_KEY`** invalidates stored sessions: disconnect and reconnect Telegram afterwards.
 - **Backups**: use Supabase backups. Messages contain customer data; treat exports accordingly.
+
+## Platform mode (Mini App + Telegram Business)
+
+One shared bot serves many businesses. Owners open the bot → Mini App (`/tg`) → answer onboarding questions → agree →
+connect via **Telegram → Settings → Telegram Business → Chatbots** (requires the owner to have Telegram Premium).
+Customer messages arrive as `business_message` updates and are answered *as the owner*.
+
+1. @BotFather → your bot → **Bot Settings → Business Mode → Enable**. (The Mini App menu button is set automatically by the worker.)
+2. Set `PLATFORM_BOT_TOKEN` on **both** Render (worker) and Vercel (web, used to verify Mini App logins). Optionally `PLATFORM_BOT_USERNAME` on Vercel.
+3. Only ONE process may poll a bot token. If this bot was previously connected in "single-business bot mode" (Settings → Telegram), disconnect it first.
+4. Redeploy. Worker logs `platform bot running`; message the bot `/start`.

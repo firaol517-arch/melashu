@@ -11,7 +11,7 @@ export const botCount = () => runners.size;
 export const hasBot = (businessId: string) => runners.has(businessId);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function api<T = any>(token: string, method: string, body: Record<string, unknown> = {}, timeoutMs = 15_000): Promise<T> {
+export async function api<T = any>(token: string, method: string, body: Record<string, unknown> = {}, timeoutMs = 15_000): Promise<T> {
   const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
   });

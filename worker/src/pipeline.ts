@@ -12,6 +12,9 @@ export type Incoming = {
 export type Sender = (a: { businessId: string; tgChatId: number; accessHash?: string; chatKind: string; text: string }) => Promise<{ tgMessageId: number }>;
 export type Typing = (a: { businessId: string; tgChatId: number; accessHash?: string }) => Promise<void>;
 
+/** Optional owner-notification hook (set by the platform bot). */
+export const hooks = { notify: async (_businessId: string, _text: string): Promise<void> => {} };
+
 const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl }) : null;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -91,6 +94,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   if (decision.action === "flag") {
     await db.from("sec_conversations").update({ needs_attention: true, attention_reason: decision.reason }).eq("id", conv.id);
     await audit(m.businessId, "ai.flagged", { reason: decision.reason });
+    void hooks.notify(m.businessId, `🔔 ${m.name} ጋር ያንተ ትኩረት ያስፈልጋል (${decision.reason}):\n"${m.text.slice(0, 140)}"\n\nበቀጥታ መልስ ስጠው።`).catch(() => {});
     return;
   }
 
@@ -111,5 +115,6 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     await db.from("sec_messages").update({ status: "failed", error: String(err?.errorMessage ?? err?.message ?? "send_failed").slice(0, 200) }).eq("id", out.id);
     await db.from("sec_conversations").update({ needs_attention: true, attention_reason: "send_failed" }).eq("id", conv.id);
     await audit(m.businessId, "ai.send_failed", { error: String(err?.errorMessage ?? "send_failed").slice(0, 100) });
+    void hooks.notify(m.businessId, `⚠️ ለ ${m.name} መልስ መላክ አልተሳካም። እባክህ ራስህ መልስ ስጥ።`).catch(() => {});
   }
 }

@@ -1,6 +1,7 @@
 import http from "node:http";
 import { config } from "./config.js";
 import { log } from "./log.js";
+import { startPlatform } from "./platform.js";
 import { resumeAll, pollAuthRequests, pollOutbox, heartbeat, liveCount } from "./tg.js";
 
 const started = Date.now();
@@ -21,6 +22,7 @@ const every = (ms: number, fn: () => Promise<unknown>, name: string) => {
   setInterval(async () => { if (running) return; running = true; try { await fn(); } catch (e: any) { log.error({ err: e?.message, job: name }, "job failed"); } finally { running = false; } }, ms);
 };
 
+await startPlatform().catch((e) => log.error({ err: e.message }, "startPlatform failed"));
 await resumeAll().catch((e) => log.error({ err: e.message }, "resumeAll failed"));
 every(config.pollMs, async () => { await pollAuthRequests(); await pollOutbox(); lastLoop = Date.now(); }, "poll");
 every(config.heartbeatMs, heartbeat, "heartbeat");

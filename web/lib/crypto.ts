@@ -21,3 +21,9 @@ export function decrypt(token: string): string {
   d.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([d.update(Buffer.from(ct, "base64url")), d.final()]).toString("utf8");
 }
+
+/** Normalised SESSION_ENC_KEY string, used as an HMAC key for Mini App session tokens (never sent to the browser). */
+export function hmacKey(): string {
+  const raw = process.env.SESSION_ENC_KEY; if (!raw) throw new Error("SESSION_ENC_KEY is not configured");
+  return raw.replace(/\s+/g, "").replace(/^['"`]+|['"`]+$/g, "");
+}

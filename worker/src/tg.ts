@@ -6,12 +6,13 @@ import { decrypt, encrypt } from "./crypto.js";
 import { log } from "./log.js";
 import { handleIncoming, type Sender, type Typing } from "./pipeline.js";
 import { connectBot, disconnectBot, hasBot, botSend, botTyping, botCount, resumeBots } from "./botapi.js";
+import { hasPlatform, platformSend, platformTyping, platformCount } from "./platform.js";
 
 type Live = { client: TelegramClient; businessId: string; failures: number };
 const live = new Map<string, Live>();                                  // authorized, running clients
 const pending = new Map<string, { client: TelegramClient; apiId: number; apiHash: string; phone: string; hash: string }>(); // mid-login
 
-export const liveCount = () => live.size + botCount();
+export const liveCount = () => live.size + botCount() + platformCount();
 const setConn = (businessId: string, patch: Record<string, unknown>) =>
   db.from("sec_telegram_connections").update(patch).eq("business_id", businessId);
 
@@ -27,6 +28,7 @@ const peerOf = async (l: Live, tgChatId: number, accessHash?: string, kind = "pr
   kind === "private" && accessHash ? new Api.InputPeerUser({ userId: BigInt(tgChatId) as any, accessHash: BigInt(accessHash) as any }) : l.client.getInputEntity(tgChatId);
 
 export const send: Sender = async ({ businessId, tgChatId, accessHash, chatKind, text }) => {
+  if (hasPlatform(businessId)) return platformSend({ businessId, tgChatId, accessHash, chatKind, text });
   if (hasBot(businessId)) return botSend({ businessId, tgChatId, accessHash, chatKind, text });
   const l = live.get(businessId); if (!l) throw new Error("telegram_not_connected");
   const r = await l.client.sendMessage(await peerOf(l, tgChatId, accessHash, chatKind), { message: text });
@@ -34,6 +36,7 @@ export const send: Sender = async ({ businessId, tgChatId, accessHash, chatKind,
   return { tgMessageId: r.id };
 };
 export const typing: Typing = async ({ businessId, tgChatId, accessHash }) => {
+  if (hasPlatform(businessId)) return platformTyping({ businessId, tgChatId, accessHash });
   if (hasBot(businessId)) return botTyping({ businessId, tgChatId, accessHash });
   const l = live.get(businessId); if (!l) return;
   await l.client.invoke(new Api.messages.SetTyping({ peer: await peerOf(l, tgChatId, accessHash), action: new Api.SendMessageTypingAction() }));

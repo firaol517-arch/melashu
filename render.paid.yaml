@@ -11,6 +11,8 @@ services:
       - { key: SUPABASE_SERVICE_ROLE_KEY, sync: false }
       - { key: SESSION_ENC_KEY, sync: false }
       - { key: AI_API_KEY, sync: false }
+      - { key: PLATFORM_BOT_TOKEN, sync: false }     # shared platform bot (BotFather token); enables the Mini App + Telegram Business mode
+      - { key: WEBAPP_URL, value: "https://melashu.vercel.app/tg" }
       - { key: AI_BASE_URL, value: "https://generativelanguage.googleapis.com/v1beta/openai/" }
       - { key: AI_MODEL, value: gemini-3.8-flash }
       - { key: LOG_LEVEL, value: info }

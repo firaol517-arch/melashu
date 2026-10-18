@@ -19,6 +19,8 @@ beforeAll(async () => {
     alter default privileges in schema public grant all on tables to anon, authenticated;
     insert into auth.users values ('${A}'),('${B}');`);
   await db.exec(readFileSync(new URL("../../supabase/migrations/20261014000001_secretary_core.sql", import.meta.url), "utf8"));
+  for (const m of ["20261017000001_bot_mode.sql", "20261018000001_platform_bot.sql"])
+    await db.exec(readFileSync(new URL(`../../supabase/migrations/${m}`, import.meta.url), "utf8"));
   bizA = (await db.query<any>(`insert into sec_businesses(owner_id,name) values ('${A}','A Shop') returning id`)).rows[0].id;
   bizB = (await db.query<any>(`insert into sec_businesses(owner_id,name) values ('${B}','B Shop') returning id`)).rows[0].id;
   await db.exec(`insert into sec_settings(business_id) values ('${bizA}'),('${bizB}'); insert into sec_telegram_connections(business_id) values ('${bizA}');`);
@@ -94,3 +96,19 @@ describe("deduplication + never-reply-twice", () => {
     expect(Number((await db.query<any>(`select count(*)::int c from sec_messages where conversation_id='${convA}'`)).rows[0].c)).toBeGreaterThanOrEqual(4);
   });
 });
+
+describe("platform tables (Mini App owners / business connections)", () => {
+  it("are not readable or writable by authenticated or anonymous users", async () => {
+    for (const t of ["sec_owners", "sec_business_connections"])
+      for (const uid of [A, null]) await expect(as(uid, `select * from ${t}`)).rejects.toThrow();
+  });
+  it("a business may be owned by a Telegram user instead of an auth user, but must have one owner", async () => {
+    await db.exec(`insert into sec_businesses(tg_owner_id,name) values (777,'TG Shop')`);
+    await expect(db.exec(`insert into sec_businesses(name) values ('Ownerless')`)).rejects.toThrow();
+    await expect(db.exec(`insert into sec_businesses(tg_owner_id,name) values (777,'Dup')`)).rejects.toThrow();
+  });
+  it("a normal signed-in user cannot read a Telegram-owned business", async () => {
+    const r = await as(A, `select name from sec_businesses where name='TG Shop'`); expect(r.rows.length).toBe(0);
+  });
+});
+
