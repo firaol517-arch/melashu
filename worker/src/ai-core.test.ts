@@ -9,6 +9,19 @@ const cust = { is_contact: false, is_blocked: false };
 const run = (s = {}, c = {}, u = {}, extra = {}) =>
   checkEligibility({ settings: { ...base, ...s }, conv: { ...conv, ...c }, customer: { ...cust, ...u }, tz: "Africa/Addis_Ababa", repliesLastHour: 0, ...extra });
 
+describe("auto classification", () => {
+  const fake = (content: string | null, boom = false) => ({ chat: { completions: { create: async () => { if (boom) throw new Error("x"); return { choices: [{ message: { content } }] }; } } } });
+  const args = { name: "Abebe", businessType: "shop", messages: ["Dega nesh?"], model: "m" };
+  it("returns the model's guess", async () => {
+    const { classifyContact } = await import("./ai-core.js");
+    expect(await classifyContact(fake('{"kind":"family","confidence":0.9,"why":"calls owner mom"}'), args)).toMatchObject({ kind: "family", confidence: 0.9 });
+  });
+  it("falls back to unknown on garbage, empty or provider errors", async () => {
+    const { classifyContact } = await import("./ai-core.js");
+    for (const c of [fake("nope"), fake(null), fake("{}"), fake("", true)]) expect((await classifyContact(c as any, args)).kind).toBe("unknown");
+  });
+});
+
 describe("contact classification", () => {
   const open = { auto_reply_allowed: false };
   const loose = { reply_to_unknown_private: true, reply_to_contacts: true };

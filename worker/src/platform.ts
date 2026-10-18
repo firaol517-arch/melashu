@@ -113,11 +113,11 @@ const askKeyboard = (convId: string) => ({ inline_keyboard: [
   [{ text: KINDS.r.label, callback_data: `k:${convId}:r` }, { text: KINDS.x.label, callback_data: `k:${convId}:x` }],
 ] });
 
-async function askOwner(businessId: string, convId: string, name: string, preview: string) {
+async function askOwner(businessId: string, convId: string, name: string, preview: string, replying = false) {
   const { data } = await db.from("sec_owners").select("bot_chat_id").eq("business_id", businessId).maybeSingle();
   if (!data?.bot_chat_id) return;
   await api(T(), "sendMessage", { chat_id: Number(data.bot_chat_id), reply_markup: askKeyboard(convId),
-    text: `💬 አዲስ ውይይት: ${name}\n"${preview.slice(0, 160)}"\n\nይህ ማን ነው? ደንበኛ ከሆነ ብቻ ረዳቱ ይመልሳል፤ ጓደኛ/ቤተሰብ ከሆነ አይመልስም።` }).catch((e) => log.warn({ err: e?.message }, "ask owner failed"));
+    text: `💬 አዲስ ውይይት: ${name}\n"${preview.slice(0, 160)}"\n\nይህ ማን ነው?${replying ? "\nረዳቱ አሁን እንደ ደንበኛ እየመለሰ ነው፤ ጓደኛ ወይም ቤተሰብ ከሆነ ምረጥ።" : "\nደንበኛ ከመረጥክ ብቻ ረዳቱ ይመልሳል።"}` }).catch((e) => log.warn({ err: e?.message }, "ask owner failed"));
 }
 
 async function onCallback(q: any) {

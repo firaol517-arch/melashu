@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { db, audit } from "./db.js";
 import { config } from "./config.js";
 import { log } from "./log.js";
-import { checkEligibility, generateDecision, retrieveKnowledge, type Settings } from "./ai-core.js";
+import { checkEligibility, classifyContact, generateDecision, retrieveKnowledge, type Settings } from "./ai-core.js";
 
 export type Incoming = {
   businessId: string; tgChatId: number; tgAccessHash?: string; tgUserId: number; tgMessageId: number;
@@ -16,7 +16,7 @@ export type Typing = (a: { businessId: string; tgChatId: number; accessHash?: st
 /** Optional owner-notification hook (set by the platform bot). */
 export const hooks = {
   notify: async (_businessId: string, _text: string): Promise<void> => {},
-  ask: async (_businessId: string, _convId: string, _name: string, _preview: string): Promise<void> => {},   // ask the owner who a new chat is
+  ask: async (_businessId: string, _convId: string, _name: string, _preview: string, _replying?: boolean): Promise<void> => {},   // ask the owner who a new chat is
 };
 
 const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl }) : null;
@@ -80,6 +80,19 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     db.from("sec_settings").select("*").eq("business_id", m.businessId).single(),
   ]);
   if (!biz || !settings) return;
+  // 2b) New chat? Let the AI guess customer / friend / family from what they wrote (only when confident; owner can always correct it).
+  if (!conv.contact_kind && settings.auto_classify !== false && openai) {
+    const { data: recent } = await db.from("sec_messages").select("body").eq("conversation_id", conv.id).eq("sender", "customer").order("created_at", { ascending: false }).limit(6);
+    if ((recent?.length ?? 0) <= 6) {
+      const c = await classifyContact(openai as any, { name: m.name, username: m.username, businessType: biz.business_type, messages: (recent ?? []).map((r) => r.body).reverse(), model: config.aiModel ?? settings.ai_model, jsonMode: !config.aiBaseUrl });
+      if (c.kind !== "unknown" && c.confidence >= 0.75) {
+        await db.from("sec_conversations").update({ contact_kind: c.kind }).eq("id", conv.id);
+        conv.contact_kind = c.kind;
+        await audit(m.businessId, "chat.auto_classified", { kind: c.kind, confidence: c.confidence });
+        if (c.kind !== "customer") void hooks.ask(m.businessId, conv.id, m.name, `🤖 ${c.kind === "family" ? "ቤተሰብ" : "ጓደኛ"} መስሎኝ ለየሁት። ልክ ካልሆነ ቀይረው፦\n"${m.text.slice(0, 120)}"`).catch(() => {});
+      }
+    }
+  }
   const elig = async () => {
     const since = new Date(Date.now() - 3600_000).toISOString();
     const { count } = await db.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", m.businessId)
@@ -90,14 +103,12 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     return { st: st as Settings, kind: (c as any)?.contact_kind ?? null, res: checkEligibility({ settings: st as Settings, conv: c!, customer: cu!, tz: biz.timezone, repliesLastHour: count ?? 0 }) };
   };
   const first = await elig();
-  if (!first.res.ok) {
-    await audit(m.businessId, "ai.skipped", { reason: first.res.reason });
-    if (first.res.reason === "awaiting_classification" && !conv.classify_prompted_at) {          // ask the owner once per chat
-      await db.from("sec_conversations").update({ classify_prompted_at: new Date().toISOString() }).eq("id", conv.id);
-      void hooks.ask(m.businessId, conv.id, m.name, m.text).catch(() => {});
-    }
-    return;
+  // Who is this? Ask the owner once per chat — even when we answer right away (classify_new=false), so a friend/family chat can be switched off.
+  if (!conv.contact_kind && !conv.classify_prompted_at) {
+    await db.from("sec_conversations").update({ classify_prompted_at: new Date().toISOString() }).eq("id", conv.id);
+    void hooks.ask(m.businessId, conv.id, m.name, m.text, first.res.ok).catch(() => {});
   }
+  if (!first.res.ok) { await audit(m.businessId, "ai.skipped", { reason: first.res.reason }); return; }
   if (!openai) { await audit(m.businessId, "ai.skipped", { reason: "ai_not_configured" }); return; }
 
   // 4) Human-like delay, then re-check: settings/takeover may have changed meanwhile

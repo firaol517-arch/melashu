@@ -9,6 +9,7 @@ export type Settings = {
   language_mode: "match" | "am" | "en"; response_rules: string; ai_model: string;
   max_replies_per_hour: number; reply_delay_seconds: number;
   reply_to_friends?: boolean; reply_to_family?: boolean;   // personal-tone replies to chats classified friend / family
+  auto_classify?: boolean;     // let the AI guess customer / friend / family for new chats
   learn_style?: boolean;       // false → never send the owner's past replies to the AI provider
   classify_new?: boolean;      // true → chats without a contact_kind get no reply until the owner classifies them
 };
@@ -195,4 +196,25 @@ export async function generateDecision(client: ChatClient, o: Parameters<typeof 
   try { parsed = ReplySchema.safeParse(extractJson(raw)); } catch { return { action: "flag", reason: "ai_invalid_json" }; }
   if (!parsed.success) return { action: "flag", reason: "ai_schema_violation" };
   return validateReply(parsed.data, { knowledge: o.knowledge, customerText: o.incoming + " " + o.history.map((h) => h.text).join(" ") });
+}
+
+// ───────── who is this? (auto-classification of a new chat) ─────────
+export const ClassifySchema = z.object({ kind: z.enum(["customer", "friend", "family", "unknown"]), confidence: z.number().min(0).max(1), why: z.string().max(200).optional().default("") });
+export type Classification = z.infer<typeof ClassifySchema>;
+
+/** Guess the relationship from the first few messages. Conservative: anything unclear is "unknown". */
+export async function classifyContact(client: ChatClient, o: { name: string; username?: string; businessType: string; messages: string[]; model: string; jsonMode?: boolean }): Promise<Classification> {
+  const unknown: Classification = { kind: "unknown", confidence: 0, why: "" };
+  const system = `You label who a Telegram sender is relative to the owner of a ${o.businessType || "small"} business.
+Labels: "customer" (asks about products, prices, orders, services, availability, delivery, booking, or is clearly doing business),
+"friend" (casual banter, jokes, plans, informal teasing between peers), "family" (addresses the owner as a relative: mom, dad, brother, sister, uncle, እናት, አባት, ወንድም, እህት, አክስት, አጎት; or clearly family matters),
+"unknown" (only a greeting or too little information, or anything ambiguous).
+Messages may be Amharic ( አማርኛ) or Amharic written in Latin letters. Be conservative: a bare greeting like "selam" or "how are you" is "unknown".
+Respond ONLY with JSON: {"kind":"customer"|"friend"|"family"|"unknown","confidence":0..1,"why":"short reason"}`;
+  const user = `Sender name: ${o.name}${o.username ? ` (@${o.username})` : ""}\nMessages (oldest first):\n${o.messages.map((m) => `- ${m.slice(0, 300)}`).join("\n")}`;
+  try {
+    const r = await client.chat.completions.create({ model: o.model, temperature: 0, ...(o.jsonMode === false ? {} : { response_format: { type: "json_object" } }), messages: [{ role: "system", content: system }, { role: "user", content: user }] });
+    const raw = r.choices[0]?.message?.content; if (!raw) return unknown;
+    const p = ClassifySchema.safeParse(extractJson(raw)); return p.success ? p.data : unknown;
+  } catch { return unknown; }
 }
