@@ -116,7 +116,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   ]);
   const history = (hist ?? []).reverse().slice(0, -1).map((h) => ({ role: (h.sender === "customer" ? "customer" : "us") as "customer" | "us", text: h.body }));
   const relationship = again.kind === "friend" || again.kind === "family" ? again.kind : "customer";
-  const styleExamples = await ownerStyle(m.businessId, conv.id, relationship);
+  const styleExamples = again.st.learn_style === false ? [] : await ownerStyle(m.businessId, conv.id, relationship);
   const knowledge = relationship === "customer" ? retrieveKnowledge(m.text, kb ?? []) : [];
   const decision = await generateDecision(openai as any, { businessName: biz.name, businessType: biz.business_type, tone: biz.tone,
     rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, styleExamples, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });

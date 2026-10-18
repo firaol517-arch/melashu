@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type KB = { id: string; kind: string; title: string; content: string };
 type Me = { business: { name: string; business_type: string; tone: string; languages: string[]; hours: string };
-  settings: { automation_enabled: boolean; dry_run: boolean; emergency_stop: boolean; reply_to_friends?: boolean; reply_to_family?: boolean } | null; connection: { status: string } | null;
+  settings: { automation_enabled: boolean; dry_run: boolean; emergency_stop: boolean; reply_to_friends?: boolean; reply_to_family?: boolean; learn_style?: boolean } | null; connection: { status: string } | null;
   knowledge: KB[]; agreed: boolean; tested: boolean; botUsername: string; workerOnline: boolean };
 type Chat = { id: string; name: string; preview: string | null; at: string | null; attention: boolean; reason: string | null; kind: "customer" | "friend" | "family" | "ignore" | null };
 
@@ -116,6 +116,8 @@ function ConnectCard({ me, reload }: { me: Me; reload: () => Promise<Me> }) {
 
 function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach" | "chats"; setTab: (t: "home" | "teach" | "chats") => void }) {
   const [chats, setChats] = useState<Chat[]>([]);
+  const [st, setSt] = useState<{ customers: number; unclassified: number; attention: number; replies24: number; incoming24: number } | null>(null);
+  useEffect(() => { if (tab === "home") call("stats").then((r) => r.ok && setSt(r.data)); }, [tab, call, me]);
   useEffect(() => { if (tab === "chats") call("chats").then((r) => r.ok && setChats(r.data.chats)); const i = setInterval(reload, 5000); return () => clearInterval(i); }, [tab, call, reload]);
   const connected = me.connection?.status === "connected"; const on = !!me.settings?.automation_enabled;
   return (<>
@@ -129,13 +131,15 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
         <p>ረዳት: <b>{on ? "በርቷል — ይመልሳል" : "ቆሟል"}</b></p>
         <button className="btn btn-primary w-full" onClick={async () => { await call("pause", "POST", { on: !on }); reload(); }}>{on ? "⏸ አቁም" : "▶️ ቀጥል"}</button>
       </div>
+      {st && <div className="grid grid-cols-2 gap-3">{([["ደንበኞች", st.customers], ["ያልተለዩ ቻቶች", st.unclassified], ["ትኩረት የሚሹ", st.attention], ["ዛሬ የመጡ መልእክቶች", st.incoming24], ["ዛሬ የመለሰው", st.replies24]] as const).map(([l, n]) =>
+        <div key={l} className="card p-4"><p className="text-2xl font-bold text-forest">{n}</p><p className="text-xs text-sage">{l}</p></div>)}</div>}
       {!connected && <ConnectCard me={me} reload={reload} />}
       <TestBox call={call} reload={reload} />
     </div>)}
     {tab === "teach" && <div className="space-y-3"><p className="text-sm text-sage">ረዳቱ የሚያውቀው ይህን ብቻ ነው። ትክክል ያልሆነውን ሰርዝ።</p><KnowledgeEditor me={me} call={call} reload={reload} /></div>}
     {tab === "chats" && (<div className="card space-y-3 p-4"><p className="text-sm font-semibold text-forest">ለግል ሰዎች ረዳቱ ይመልስ?</p><p className="text-xs text-sage">ሞቅ ያለ አጭር መልስ ብቻ፤ ስለ አንተ ምንም አይገምትም፣ ለውሳኔ ወይም ገንዘብ ጥያቄ ላንተ ያስተላልፋል።</p>
-      {([["reply_to_friends", "🤝 ጓደኞች"], ["reply_to_family", "👨‍👩‍👧 ቤተሰብ"]] as const).map(([k, l]) => { const on = !!(me.settings as any)?.[k];
-        return <button key={k} onClick={async () => { await call("prefs", "POST", { [k]: !on }); await reload(); }} className="flex w-full items-center justify-between rounded-2xl border border-sand px-4 py-3 text-sm font-semibold"><span>{l}</span><span className={on ? "text-leaf" : "text-sage"}>{on ? "ይመልሳል ✓" : "አይመልስም"}</span></button>; })}</div>)}
+      {([["reply_to_friends", "🤝 ጓደኞች"], ["reply_to_family", "👨‍👩‍👧 ቤተሰብ"], ["learn_style", "✍️ ከመልሶቼ አጻጻፍ ተማር"]] as const).map(([k, l]) => { const on = k === "learn_style" ? (me.settings as any)?.learn_style !== false : !!(me.settings as any)?.[k];
+        return <button key={k} onClick={async () => { await call("prefs", "POST", { [k]: !on }); await reload(); }} className="flex w-full items-center justify-between rounded-2xl border border-sand px-4 py-3 text-sm font-semibold"><span>{l}</span><span className={on ? "text-leaf" : "text-sage"}>{k === "learn_style" ? (on ? "በርቷል ✓" : "ጠፍቷል") : (on ? "ይመልሳል ✓" : "አይመልስም")}</span></button>; })}</div>)}
     {tab === "chats" && (<div className="space-y-2">{chats.length === 0 && <p className="card p-6 text-center text-sage">ገና ቻት የለም።</p>}
       {chats.map((c) => <div key={c.id} className="card p-4"><p className="flex items-center gap-2 font-semibold">{c.name || "ደንበኛ"}{c.attention && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ትኩረት</span>}{!c.kind && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ያልተለየ</span>}</p><p className="truncate text-sm text-sage">{c.preview}</p>
         <div className="mt-3 flex flex-wrap gap-2">{([["customer", "💼 ደንበኛ"], ["friend", "🤝 ጓደኛ"], ["family", "👨‍👩‍👧 ቤተሰብ"], ["ignore", "🚫 ችላ"]] as const).map(([k, l]) =>

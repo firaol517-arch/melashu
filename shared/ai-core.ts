@@ -9,6 +9,7 @@ export type Settings = {
   language_mode: "match" | "am" | "en"; response_rules: string; ai_model: string;
   max_replies_per_hour: number; reply_delay_seconds: number;
   reply_to_friends?: boolean; reply_to_family?: boolean;   // personal-tone replies to chats classified friend / family
+  learn_style?: boolean;       // false → never send the owner's past replies to the AI provider
   classify_new?: boolean;      // true → chats without a contact_kind get no reply until the owner classifies them
 };
 export type Conversation = {

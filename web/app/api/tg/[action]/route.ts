@@ -55,7 +55,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
   const admin = supabaseAdmin(); const id = s.biz.id as string;
   if (action === "me") {
     const [{ data: settings }, { data: conn }, { data: kb }, { data: owner }, { count: tests }] = await Promise.all([
-      admin.from("sec_settings").select("automation_enabled,dry_run,emergency_stop,reply_to_friends,reply_to_family").eq("business_id", id).single(),
+      admin.from("sec_settings").select("automation_enabled,dry_run,emergency_stop,reply_to_friends,reply_to_family,learn_style").eq("business_id", id).single(),
       admin.from("sec_telegram_connections").select("status,mode,last_heartbeat_at").eq("business_id", id).maybeSingle(),
       admin.from("sec_knowledge").select("id,kind,title,content").eq("business_id", id).eq("active", true).order("created_at"),
       admin.from("sec_owners").select("agreed_at").eq("tg_user_id", s.tg).maybeSingle(),
@@ -66,6 +66,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
       settings, connection: conn, knowledge: kb ?? [], agreed: !!owner?.agreed_at, tested: (tests ?? 0) > 0,
       botUsername: process.env.PLATFORM_BOT_USERNAME ?? "qeltafaw_bot",
       workerOnline: !!conn?.last_heartbeat_at && Date.now() - new Date(conn.last_heartbeat_at).getTime() < 120_000 });
+  }
+  if (action === "stats") {
+    const since = new Date(Date.now() - 86400_000).toISOString(), c = (q: any) => q.then((r: any) => r.count ?? 0);
+    const cnt = (f: (q: any) => any) => c(f(admin.from("sec_conversations").select("id", { count: "exact", head: true }).eq("business_id", id)));
+    const [customers, unclassified, attention, replies24, incoming24] = await Promise.all([
+      cnt((q) => q.eq("contact_kind", "customer")), cnt((q) => q.is("contact_kind", null)), cnt((q) => q.eq("needs_attention", true)),
+      c(admin.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", id).eq("sender", "ai").eq("status", "sent").gte("created_at", since)),
+      c(admin.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", id).eq("direction", "in").gte("created_at", since)),
+    ]);
+    return json({ customers, unclassified, attention, replies24, incoming24 });
   }
   if (action === "chats") {
     const { data } = await admin.from("sec_conversations").select("id,last_message_preview,last_message_at,needs_attention,attention_reason,contact_kind,sec_customers(display_name)")
@@ -128,7 +138,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
     return json({ ok: true });
   }
   if (action === "prefs") {
-    const a = z.object({ reply_to_friends: z.boolean().optional(), reply_to_family: z.boolean().optional() }).safeParse(body); if (!a.success) return err("invalid_input");
+    const a = z.object({ reply_to_friends: z.boolean().optional(), reply_to_family: z.boolean().optional(), learn_style: z.boolean().optional() }).safeParse(body); if (!a.success) return err("invalid_input");
     await admin.from("sec_settings").update(a.data).eq("business_id", id);
     await log(id, "settings.personal_replies", a.data);
     return json({ ok: true });
