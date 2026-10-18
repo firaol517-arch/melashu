@@ -96,7 +96,7 @@ export type ModelReply = z.infer<typeof ReplySchema>;
 
 export type Decision =
   | { action: "send"; reply: string; meta: Omit<ModelReply, "reply"> }
-  | { action: "flag"; reason: string; draft?: string };
+  | { action: "flag"; reason: string; draft?: string; detail?: string };
 
 const NUM = /(?<![\p{L}\d])\d[\d,.]*\d|\d/gu;
 const URLRE = /(https?:\/\/|www\.|t\.me\/)\S+/gi;
@@ -187,10 +187,16 @@ export function extractJson(raw: string): unknown {
 /** jsonMode=false for OpenAI-compatible providers (e.g. Gemini) that don't document response_format json_object. */
 export async function generateDecision(client: ChatClient, o: Parameters<typeof buildMessages>[0] & { model: string; jsonMode?: boolean }): Promise<Decision> {
   let raw: string | null = null;
+  const call = () => client.chat.completions.create({ model: o.model, temperature: 0.3, ...(o.jsonMode === false ? {} : { response_format: { type: "json_object" } }), messages: buildMessages(o) });
   try {
-    const r = await client.chat.completions.create({ model: o.model, temperature: 0.3, ...(o.jsonMode === false ? {} : { response_format: { type: "json_object" } }), messages: buildMessages(o) });
+    let r;
+    try { r = await call(); }
+    catch (e: any) {                                   // one retry for rate limits / transient provider errors
+      const st = Number(e?.status ?? e?.code ?? 0);
+      if (st === 429 || st >= 500) { await new Promise((res) => setTimeout(res, 2500)); r = await call(); } else throw e;
+    }
     raw = r.choices[0]?.message?.content ?? null;
-  } catch { return { action: "flag", reason: "ai_provider_error" }; }
+  } catch (e: any) { return { action: "flag", reason: "ai_provider_error", detail: `${e?.status ?? e?.code ?? ""} ${String(e?.message ?? e).replace(/\s+/g, " ").slice(0, 200)}`.trim() }; }
   if (!raw) return { action: "flag", reason: "ai_empty_response" };
   let parsed;
   try { parsed = ReplySchema.safeParse(extractJson(raw)); } catch { return { action: "flag", reason: "ai_invalid_json" }; }

@@ -140,8 +140,9 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, styleExamples, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });
 
   if (decision.action === "flag") {
+    if (decision.reason === "ai_provider_error") log.warn({ detail: (decision as any).detail, model: config.aiModel }, "ai provider error");
     await db.from("sec_conversations").update({ needs_attention: true, attention_reason: decision.reason }).eq("id", conv.id);
-    await audit(m.businessId, "ai.flagged", { reason: decision.reason });
+    await audit(m.businessId, "ai.flagged", { reason: decision.reason, detail: (decision as any).detail });
     void hooks.notify(m.businessId, `🔔 ${m.name} ጋር ያንተ ትኩረት ያስፈልጋል (${decision.reason}):\n"${m.text.slice(0, 140)}"\n\nበቀጥታ መልስ ስጠው።`).catch(() => {});
     return;
   }
