@@ -8,10 +8,12 @@ export type Settings = {
   reply_to_unknown_private: boolean; reply_to_groups: boolean; reply_to_contacts: boolean;
   language_mode: "match" | "am" | "en"; response_rules: string; ai_model: string;
   max_replies_per_hour: number; reply_delay_seconds: number;
+  classify_new?: boolean;      // true → chats without a contact_kind get no reply until the owner classifies them
 };
 export type Conversation = {
   chat_kind: "private" | "group" | "channel"; auto_reply_allowed: boolean; ai_paused: boolean;
   manual_takeover: boolean; sensitive: boolean;
+  contact_kind?: "customer" | "friend" | "family" | "ignore" | null;
 };
 export type Customer = { is_contact: boolean; is_blocked: boolean };
 export type Knowledge = { id: string; kind: string; title: string; content: string };
@@ -45,11 +47,14 @@ export function checkEligibility(o: {
   if (c.chat_kind === "channel") return { ok: false, reason: "channel" };
   if (c.chat_kind === "group" && !s.reply_to_groups) return { ok: false, reason: "group_not_enabled" };
   if (u.is_blocked) return { ok: false, reason: "customer_blocked" };
-  if (u.is_contact && !s.reply_to_contacts && !c.auto_reply_allowed) return { ok: false, reason: "personal_contact" };
+  if (c.contact_kind === "friend" || c.contact_kind === "family" || c.contact_kind === "ignore") return { ok: false, reason: "personal_chat" };
+  if (!c.contact_kind && s.classify_new) return { ok: false, reason: "awaiting_classification" };
+  const isCustomer = c.contact_kind === "customer";
+  if (u.is_contact && !s.reply_to_contacts && !c.auto_reply_allowed && !isCustomer) return { ok: false, reason: "personal_contact" };
   if (c.sensitive) return { ok: false, reason: "sensitive_conversation" };
   if (c.ai_paused) return { ok: false, reason: "conversation_paused" };
   if (c.manual_takeover) return { ok: false, reason: "manual_takeover" };
-  if (!c.auto_reply_allowed && !s.reply_to_unknown_private) return { ok: false, reason: "not_allow_listed" };
+  if (!c.auto_reply_allowed && !isCustomer && !s.reply_to_unknown_private) return { ok: false, reason: "not_allow_listed" };
   if (inQuietHours(s, now, o.tz)) return { ok: false, reason: "quiet_hours" };
   if (o.repliesLastHour >= s.max_replies_per_hour) return { ok: false, reason: "rate_limited" };
   return { ok: true };

@@ -68,9 +68,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
       workerOnline: !!conn?.last_heartbeat_at && Date.now() - new Date(conn.last_heartbeat_at).getTime() < 120_000 });
   }
   if (action === "chats") {
-    const { data } = await admin.from("sec_conversations").select("id,last_message_preview,last_message_at,needs_attention,attention_reason,sec_customers(display_name)")
+    const { data } = await admin.from("sec_conversations").select("id,last_message_preview,last_message_at,needs_attention,attention_reason,contact_kind,sec_customers(display_name)")
       .eq("business_id", id).order("last_message_at", { ascending: false, nullsFirst: false }).limit(25);
-    return json({ chats: (data ?? []).map((c: any) => ({ id: c.id, name: c.sec_customers?.display_name ?? "", preview: c.last_message_preview, at: c.last_message_at, attention: c.needs_attention, reason: c.attention_reason })) });
+    return json({ chats: (data ?? []).map((c: any) => ({ id: c.id, name: c.sec_customers?.display_name ?? "", preview: c.last_message_preview, at: c.last_message_at, attention: c.needs_attention, reason: c.attention_reason, kind: c.contact_kind ?? null })) });
   }
   return err("not_found", 404);
 }
@@ -125,6 +125,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
     await admin.from("sec_businesses").update({ onboarding_completed: true }).eq("id", id);
     await admin.from("sec_owners").update({ agreed_at: new Date().toISOString() }).eq("tg_user_id", s.tg);
     await log(id, "automation.live_enabled", { via: "mini_app_agreement" });
+    return json({ ok: true });
+  }
+  if (action === "classify") {
+    const a = z.object({ id: z.string().uuid(), kind: z.enum(["customer", "friend", "family", "ignore"]) }).safeParse(body); if (!a.success) return err("invalid_input");
+    const { data } = await admin.from("sec_conversations").update({ contact_kind: a.data.kind }).eq("id", a.data.id).eq("business_id", id).select("id").maybeSingle();
+    if (!data) return err("not_found", 404);
+    await log(id, "chat.classified", { kind: a.data.kind, via: "mini_app" });
     return json({ ok: true });
   }
   if (action === "pause") {

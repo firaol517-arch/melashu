@@ -103,18 +103,59 @@ async function onBusinessMessage(m: any) {
   }, platformSend, platformTyping);
 }
 
+
+// ── "Who is this?" — the owner classifies each new chat; only customers get AI replies ──
+const KINDS: Record<string, { kind: "customer" | "friend" | "family" | "ignore"; label: string }> = {
+  c: { kind: "customer", label: "💼 ደንበኛ / ሥራ" }, f: { kind: "friend", label: "🤝 ጓደኛ" }, r: { kind: "family", label: "👨‍👩‍👧 ቤተሰብ" }, x: { kind: "ignore", label: "🚫 ችላ በል" },
+};
+const askKeyboard = (convId: string) => ({ inline_keyboard: [
+  [{ text: KINDS.c.label, callback_data: `k:${convId}:c` }, { text: KINDS.f.label, callback_data: `k:${convId}:f` }],
+  [{ text: KINDS.r.label, callback_data: `k:${convId}:r` }, { text: KINDS.x.label, callback_data: `k:${convId}:x` }],
+] });
+
+async function askOwner(businessId: string, convId: string, name: string, preview: string) {
+  const { data } = await db.from("sec_owners").select("bot_chat_id").eq("business_id", businessId).maybeSingle();
+  if (!data?.bot_chat_id) return;
+  await api(T(), "sendMessage", { chat_id: Number(data.bot_chat_id), reply_markup: askKeyboard(convId),
+    text: `💬 አዲስ ውይይት: ${name}\n"${preview.slice(0, 160)}"\n\nይህ ማን ነው? ደንበኛ ከሆነ ብቻ ረዳቱ ይመልሳል፤ ጓደኛ/ቤተሰብ ከሆነ አይመልስም።` }).catch((e) => log.warn({ err: e?.message }, "ask owner failed"));
+}
+
+async function onCallback(q: any) {
+  const m = /^k:([0-9a-f-]{36}):([cfrx])$/.exec(q.data ?? "");
+  if (!m) return void api(T(), "answerCallbackQuery", { callback_query_id: q.id }).catch(() => {});
+  const { data: owner } = await db.from("sec_owners").select("business_id").eq("tg_user_id", q.from.id).maybeSingle();
+  if (!owner?.business_id) return void api(T(), "answerCallbackQuery", { callback_query_id: q.id, text: "አልተፈቀደም" }).catch(() => {});
+  const k = KINDS[m[2]];
+  const { data: conv } = await db.from("sec_conversations").update({ contact_kind: k.kind }).eq("id", m[1]).eq("business_id", owner.business_id)
+    .select("id,tg_chat_id,customer_id,sec_customers(display_name,tg_user_id,username)").maybeSingle() as any;
+  if (!conv) return void api(T(), "answerCallbackQuery", { callback_query_id: q.id, text: "ውይይቱ አልተገኘም" }).catch(() => {});
+  await audit(owner.business_id, "chat.classified", { kind: k.kind });
+  await api(T(), "answerCallbackQuery", { callback_query_id: q.id, text: k.label }).catch(() => {});
+  const name = conv.sec_customers?.display_name ?? "";
+  await api(T(), "editMessageText", { chat_id: q.message?.chat?.id, message_id: q.message?.message_id,
+    text: `${k.label} — ${name}\n${k.kind === "customer" ? "✅ ረዳቱ ለዚህ ሰው በስምህ ይመልሳል።" : "ረዳቱ ለዚህ ሰው አይመልስም።"}` }).catch(() => {});
+  if (k.kind !== "customer") return;
+  // The first message arrived before we knew who this was — answer it now.
+  const { data: last } = await db.from("sec_messages").select("tg_message_id,body").eq("conversation_id", conv.id).eq("sender", "customer")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!last || last.body === "[non-text message]") return;
+  await handleIncoming({ businessId: owner.business_id, tgChatId: Number(conv.tg_chat_id), tgUserId: Number(conv.sec_customers?.tg_user_id), tgMessageId: Number(last.tg_message_id),
+    chatKind: "private", text: last.body, fromSelf: false, isBot: false, isContact: false, name, username: conv.sec_customers?.username ?? undefined, replay: true }, platformSend, platformTyping);
+}
+
 async function loop() {
   let failures = 0, lastBeat = 0;
   while (!stop) {
     try {
-      const updates = await api<any[]>(T(), "getUpdates", { offset, timeout: 25, allowed_updates: ["message", "business_connection", "business_message"] }, 40_000);
+      const updates = await api<any[]>(T(), "getUpdates", { offset, timeout: 25, allowed_updates: ["message", "business_connection", "business_message", "callback_query"] }, 40_000);
       failures = 0; st.lastPollAt = Date.now(); st.lastError = "";
       for (const u of updates) {
-        st.lastUpdateAt = Date.now(); log.info({ id: u.update_id, kind: u.business_message ? "business_message" : u.business_connection ? "business_connection" : "message" }, "platform update");
+        st.lastUpdateAt = Date.now(); log.info({ id: u.update_id, kind: u.callback_query ? "callback_query" : u.business_message ? "business_message" : u.business_connection ? "business_connection" : "message" }, "platform update");
         offset = u.update_id + 1;
         try {
           if (u.business_connection) await registerConnection(u.business_connection);
           else if (u.business_message) await onBusinessMessage(u.business_message);
+          else if (u.callback_query) await onCallback(u.callback_query);
           else if (u.message) await onDirectMessage(u.message);
         } catch (e: any) { log.error({ err: e?.message }, "platform update failed"); }
       }
@@ -134,6 +175,7 @@ export async function startPlatform() {
   await api(T(), "setChatMenuButton", { menu_button: { type: "web_app", text: "ክፈት", web_app: { url: config.webAppUrl } } }).catch((e) => log.warn({ err: e?.message }, "menu button failed"));
   await api(T(), "setMyCommands", { commands: [{ command: "start", description: "ጀምር" }, { command: "status", description: "ሁኔታ" }, { command: "pause", description: "ረዳቱን አቁም" }, { command: "resume", description: "ረዳቱን ቀጥል" }] }).catch(() => {});
   await loadConnections();
+  hooks.ask = askOwner;
   hooks.notify = async (businessId, text) => {
     const { data } = await db.from("sec_owners").select("bot_chat_id").eq("business_id", businessId).maybeSingle();
     if (data?.bot_chat_id) await say(Number(data.bot_chat_id), text);

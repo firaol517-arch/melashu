@@ -6,7 +6,7 @@ type KB = { id: string; kind: string; title: string; content: string };
 type Me = { business: { name: string; business_type: string; tone: string; languages: string[]; hours: string };
   settings: { automation_enabled: boolean; dry_run: boolean; emergency_stop: boolean } | null; connection: { status: string } | null;
   knowledge: KB[]; agreed: boolean; tested: boolean; botUsername: string; workerOnline: boolean };
-type Chat = { id: string; name: string; preview: string | null; at: string | null; attention: boolean; reason: string | null };
+type Chat = { id: string; name: string; preview: string | null; at: string | null; attention: boolean; reason: string | null; kind: "customer" | "friend" | "family" | "ignore" | null };
 
 const tg = () => (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
 
@@ -134,7 +134,10 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
     </div>)}
     {tab === "teach" && <div className="space-y-3"><p className="text-sm text-sage">ረዳቱ የሚያውቀው ይህን ብቻ ነው። ትክክል ያልሆነውን ሰርዝ።</p><KnowledgeEditor me={me} call={call} reload={reload} /></div>}
     {tab === "chats" && (<div className="space-y-2">{chats.length === 0 && <p className="card p-6 text-center text-sage">ገና ቻት የለም።</p>}
-      {chats.map((c) => <div key={c.id} className="card p-4"><p className="flex items-center gap-2 font-semibold">{c.name || "ደንበኛ"}{c.attention && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ትኩረት</span>}</p><p className="truncate text-sm text-sage">{c.preview}</p></div>)}</div>)}
+      {chats.map((c) => <div key={c.id} className="card p-4"><p className="flex items-center gap-2 font-semibold">{c.name || "ደንበኛ"}{c.attention && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ትኩረት</span>}{!c.kind && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ያልተለየ</span>}</p><p className="truncate text-sm text-sage">{c.preview}</p>
+        <div className="mt-3 flex flex-wrap gap-2">{([["customer", "💼 ደንበኛ"], ["friend", "🤝 ጓደኛ"], ["family", "👨‍👩‍👧 ቤተሰብ"], ["ignore", "🚫 ችላ"]] as const).map(([k, l]) =>
+          <button key={k} onClick={async () => { const r = await call("classify", "POST", { id: c.id, kind: k }); if (r.ok) setChats((all) => all.map((x) => x.id === c.id ? { ...x, kind: k } : x)); }}
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${c.kind === k ? "border-forest bg-forest text-ivory" : "border-sand text-forest"}`}>{l}</button>)}</div></div>)}</div>)}
   </>);
 }
 

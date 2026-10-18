@@ -8,12 +8,16 @@ export type Incoming = {
   businessId: string; tgChatId: number; tgAccessHash?: string; tgUserId: number; tgMessageId: number;
   chatKind: "private" | "group" | "channel"; text: string; name: string; username?: string; isContact: boolean;
   fromSelf: boolean; isBot: boolean;
+  replay?: boolean;            // re-run an already-stored message (after the owner classifies the chat)
 };
 export type Sender = (a: { businessId: string; tgChatId: number; accessHash?: string; chatKind: string; text: string }) => Promise<{ tgMessageId: number }>;
 export type Typing = (a: { businessId: string; tgChatId: number; accessHash?: string }) => Promise<void>;
 
 /** Optional owner-notification hook (set by the platform bot). */
-export const hooks = { notify: async (_businessId: string, _text: string): Promise<void> => {} };
+export const hooks = {
+  notify: async (_businessId: string, _text: string): Promise<void> => {},
+  ask: async (_businessId: string, _convId: string, _name: string, _preview: string): Promise<void> => {},   // ask the owner who a new chat is
+};
 
 const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl }) : null;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -45,13 +49,20 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   if (!conv) return log.error({ businessId: m.businessId }, "conversation upsert failed");
 
   // 2) Deduplicate: unique(conversation_id, tg_message_id). A replay or reconnect re-delivery is dropped here.
-  const { data: inserted, error } = await db.from("sec_messages").insert({
-    business_id: m.businessId, conversation_id: conv.id, tg_message_id: m.tgMessageId, direction: "in", sender: "customer",
-    body: m.text || "[non-text message]", status: "received" }).select("id").single();
-  if (error) { if (error.code === "23505") return log.debug("duplicate message ignored"); return log.error({ code: error.code }, "message insert failed"); }
-  await db.from("sec_conversations").update({ unread_count: (conv.unread_count ?? 0) + 1, last_message_at: new Date().toISOString(),
-    last_message_preview: (m.text || "[non-text message]").slice(0, 80) }).eq("id", conv.id);
-  if (!m.text) { await db.from("sec_conversations").update({ needs_attention: true, attention_reason: "non_text_message" }).eq("id", conv.id); return; }
+  let inserted: { id: string } | null;
+  if (m.replay) {
+    ({ data: inserted } = await db.from("sec_messages").select("id").eq("conversation_id", conv.id).eq("tg_message_id", m.tgMessageId).maybeSingle());
+    if (!inserted) return;
+  } else {
+    const { data, error } = await db.from("sec_messages").insert({
+      business_id: m.businessId, conversation_id: conv.id, tg_message_id: m.tgMessageId, direction: "in", sender: "customer",
+      body: m.text || "[non-text message]", status: "received" }).select("id").single();
+    if (error) { if (error.code === "23505") return log.debug("duplicate message ignored"); return log.error({ code: error.code }, "message insert failed"); }
+    inserted = data;
+    await db.from("sec_conversations").update({ unread_count: (conv.unread_count ?? 0) + 1, last_message_at: new Date().toISOString(),
+      last_message_preview: (m.text || "[non-text message]").slice(0, 80) }).eq("id", conv.id);
+    if (!m.text) { await db.from("sec_conversations").update({ needs_attention: true, attention_reason: "non_text_message" }).eq("id", conv.id); return; }
+  }
 
   // 3) Eligibility (default-deny)
   const [{ data: biz }, { data: settings }] = await Promise.all([
@@ -69,7 +80,14 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     return { st: st as Settings, res: checkEligibility({ settings: st as Settings, conv: c!, customer: cu!, tz: biz.timezone, repliesLastHour: count ?? 0 }) };
   };
   const first = await elig();
-  if (!first.res.ok) { await audit(m.businessId, "ai.skipped", { reason: first.res.reason }); return; }
+  if (!first.res.ok) {
+    await audit(m.businessId, "ai.skipped", { reason: first.res.reason });
+    if (first.res.reason === "awaiting_classification" && !conv.classify_prompted_at) {          // ask the owner once per chat
+      await db.from("sec_conversations").update({ classify_prompted_at: new Date().toISOString() }).eq("id", conv.id);
+      void hooks.ask(m.businessId, conv.id, m.name, m.text).catch(() => {});
+    }
+    return;
+  }
   if (!openai) { await audit(m.businessId, "ai.skipped", { reason: "ai_not_configured" }); return; }
 
   // 4) Human-like delay, then re-check: settings/takeover may have changed meanwhile

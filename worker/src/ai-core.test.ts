@@ -9,6 +9,17 @@ const cust = { is_contact: false, is_blocked: false };
 const run = (s = {}, c = {}, u = {}, extra = {}) =>
   checkEligibility({ settings: { ...base, ...s }, conv: { ...conv, ...c }, customer: { ...cust, ...u }, tz: "Africa/Addis_Ababa", repliesLastHour: 0, ...extra });
 
+describe("contact classification", () => {
+  const open = { auto_reply_allowed: false };
+  const loose = { reply_to_unknown_private: true, reply_to_contacts: true };
+  it("holds unclassified chats until the owner decides", () => expect(run({ ...loose, classify_new: true }, open)).toEqual({ ok: false, reason: "awaiting_classification" }));
+  it("replies to chats classified as customer", () => expect(run({ classify_new: true }, { ...open, contact_kind: "customer" }).ok).toBe(true));
+  it("never replies to friends, family or ignored chats", () => {
+    for (const k of ["friend", "family", "ignore"] as const) expect(run({ ...loose, classify_new: true }, { auto_reply_allowed: true, contact_kind: k })).toEqual({ ok: false, reason: "personal_chat" });
+  });
+  it("customer still respects pause and quiet rules", () => expect(run({}, { contact_kind: "customer", ai_paused: true })).toMatchObject({ reason: "conversation_paused" }));
+});
+
 describe("eligibility (default-deny)", () => {
   it("allows an allow-listed private customer", () => expect(run().ok).toBe(true));
   it("blocks when automation is off", () => expect(run({ automation_enabled: false })).toEqual({ ok: false, reason: "automation_off" }));
