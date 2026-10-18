@@ -24,7 +24,7 @@ const log = (b: string, event: string, detail: Record<string, unknown> = {}) => 
 
 async function authenticate(req: Request) {
   const body = await req.json().catch(() => null);
-  const token = process.env.PLATFORM_BOT_TOKEN;
+  const token = (process.env.PLATFORM_BOT_TOKEN ?? "").replace(/\s+/g, "").replace(/^["']|["']$/g, "");
   if (!token) return err("PLATFORM_BOT_TOKEN is not configured on the server", 503);
   const u = verifyInitData(String(body?.initData ?? ""), token);
   if (!u) return err("invalid_telegram_data", 401);
