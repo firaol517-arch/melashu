@@ -17,6 +17,7 @@ export type Typing = (a: { businessId: string; tgChatId: number; accessHash?: st
 export const hooks = {
   notify: async (_businessId: string, _text: string): Promise<void> => {},
   ask: async (_businessId: string, _convId: string, _name: string, _preview: string, _replying?: boolean): Promise<void> => {},   // ask the owner who a new chat is
+  approve: async (_businessId: string, _messageId: string, _name: string, _incoming: string, _draft: string): Promise<void> => {},   // owner approves personal (friend/family) replies
 };
 
 const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl }) : null;
@@ -141,10 +142,12 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
 
   // 6) Idempotent reply row FIRST: unique(reply_to_message_id) guarantees we never answer the same message twice.
   const dry = again.st.dry_run;
+  const needsApproval = relationship !== "customer";          // friends & family: the owner approves each reply first
   const { data: out, error: e2 } = await db.from("sec_messages").insert({ business_id: m.businessId, conversation_id: conv.id, direction: "out",
-    sender: "ai", body: decision.reply, status: dry ? "dry_run" : "sending", reply_to_message_id: inserted.id, ai_meta: decision.meta }).select("id").single();
+    sender: "ai", body: decision.reply, status: dry ? "dry_run" : needsApproval ? "queued" : "sending", reply_to_message_id: inserted.id, ai_meta: decision.meta }).select("id").single();
   if (e2) { if (e2.code === "23505") return log.debug("already replied"); return log.error({ code: e2.code }, "reply insert failed"); }
   if (dry) { await audit(m.businessId, "ai.dry_run_reply"); return; }
+  if (needsApproval) { await audit(m.businessId, "ai.awaiting_approval", { kind: relationship }); void hooks.approve(m.businessId, out.id, m.name, m.text, decision.reply).catch(() => {}); return; }
 
   // 7) Send, and only mark 'sent' when Telegram returns a message id.
   try {
