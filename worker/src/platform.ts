@@ -120,39 +120,7 @@ async function askOwner(businessId: string, convId: string, name: string, previe
     text: `💬 አዲስ ውይይት: ${name}\n"${preview.slice(0, 160)}"\n\nይህ ማን ነው?${replying ? "\nረዳቱ አሁን እንደ ደንበኛ እየመለሰ ነው፤ ጓደኛ ወይም ቤተሰብ ከሆነ ምረጥ።" : "\nደንበኛ ከመረጥክ ብቻ ረዳቱ ይመልሳል።"}` }).catch((e) => log.warn({ err: e?.message }, "ask owner failed"));
 }
 
-async function approveDraft(businessId: string, messageId: string, name: string, incoming: string, draft: string) {
-  const { data } = await db.from("sec_owners").select("bot_chat_id").eq("business_id", businessId).maybeSingle();
-  if (!data?.bot_chat_id) return;
-  await api(T(), "sendMessage", { chat_id: Number(data.bot_chat_id),
-    text: `✍️ ${name} ጻፈ:\n"${incoming.slice(0, 200)}"\n\nየተዘጋጀ መልስ:\n"${draft}"\n\nልላክ?`,
-    reply_markup: { inline_keyboard: [[{ text: "✅ ላክ", callback_data: `a:${messageId}:y` }, { text: "❌ አትላክ", callback_data: `a:${messageId}:n` }]] } }).catch((e) => log.warn({ err: e?.message }, "approve prompt failed"));
-}
-
-async function onApproval(q: any, mm: RegExpExecArray) {
-  const done = (text: string) => api(T(), "answerCallbackQuery", { callback_query_id: q.id, text }).catch(() => {});
-  const { data: owner } = await db.from("sec_owners").select("business_id").eq("tg_user_id", q.from.id).maybeSingle();
-  if (!owner?.business_id) return void done("አልተፈቀደም");
-  const yes = mm[2] === "y";
-  // Atomic claim: only a still-queued reply of THIS owner's business can be approved/declined, exactly once.
-  const { data: msg } = await db.from("sec_messages").update({ status: yes ? "sending" : "failed", ...(yes ? {} : { error: "declined_by_owner" }) })
-    .eq("id", mm[1]).eq("business_id", owner.business_id).eq("status", "queued").select("id,body,conversation_id").maybeSingle();
-  if (!msg) return void done("ይህ ቀድሞ ተስተናግዷል");
-  const edit = (text: string) => api(T(), "editMessageText", { chat_id: q.message?.chat?.id, message_id: q.message?.message_id, text }).catch(() => {});
-  if (!yes) { await done("አልተላከም"); return void edit("❌ አልተላከም።"); }
-  const { data: conv } = await db.from("sec_conversations").select("tg_chat_id").eq("id", msg.conversation_id).maybeSingle();
-  try {
-    const r = await platformSend({ businessId: owner.business_id, tgChatId: Number(conv?.tg_chat_id), chatKind: "private", text: msg.body });
-    await db.from("sec_messages").update({ status: "sent", tg_message_id: r.tgMessageId, sent_at: new Date().toISOString() }).eq("id", msg.id);
-    await audit(owner.business_id, "ai.reply_sent", { approved: true });
-    await done("ተልኳል ✅"); void edit(`✅ ተልኳል:\n"${msg.body}"`);
-  } catch (e: any) {
-    await db.from("sec_messages").update({ status: "failed", error: String(e?.message ?? "send_failed").slice(0, 200) }).eq("id", msg.id);
-    await done("መላክ አልተሳካም"); void edit("⚠️ መላክ አልተሳካም። እባክህ ራስህ መልስ ስጥ።");
-  }
-}
-
 async function onCallback(q: any) {
-  const ap = /^a:([0-9a-f-]{36}):([yn])$/.exec(q.data ?? ""); if (ap) return onApproval(q, ap);
   const m = /^k:([0-9a-f-]{36}):([cfrx])$/.exec(q.data ?? "");
   if (!m) return void api(T(), "answerCallbackQuery", { callback_query_id: q.id }).catch(() => {});
   const { data: owner } = await db.from("sec_owners").select("business_id").eq("tg_user_id", q.from.id).maybeSingle();
@@ -207,7 +175,7 @@ export async function startPlatform() {
   await api(T(), "setChatMenuButton", { menu_button: { type: "web_app", text: "ክፈት", web_app: { url: config.webAppUrl } } }).catch((e) => log.warn({ err: e?.message }, "menu button failed"));
   await api(T(), "setMyCommands", { commands: [{ command: "start", description: "ጀምር" }, { command: "status", description: "ሁኔታ" }, { command: "pause", description: "ረዳቱን አቁም" }, { command: "resume", description: "ረዳቱን ቀጥል" }] }).catch(() => {});
   await loadConnections();
-  hooks.ask = askOwner; hooks.approve = approveDraft;
+  hooks.ask = askOwner;
   hooks.notify = async (businessId, text) => {
     const { data } = await db.from("sec_owners").select("bot_chat_id").eq("business_id", businessId).maybeSingle();
     if (data?.bot_chat_id) await say(Number(data.bot_chat_id), text);
