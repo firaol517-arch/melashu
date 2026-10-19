@@ -143,7 +143,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   if (decision.action === "flag" && smallTalk) {   // a friend's plain greeting/farewell never needs the owner — answer with a safe short reply instead of escalating
     const am = /[\u1200-\u137F]/.test(m.text);
     (decision as any).action = "reply";
-    (decision as any).reply = am ? "ሰላም! እኔ የባለቤቱ AI ረዳት ነኝ። መልእክትህን አድርሼዋለሁ፤ በኋላ ራሱ ይመልስልሃል 🙏" : "Selam! Ene yebalebetu AI assistant negn. Meleketihin aderseweyalehu, behuala ras ye mimelslih yihonal 🙏";
+    (decision as any).reply = am ? "ሰላም! ደህና ነኝ፣ አንተስ? 🙏" : "Selam! Dehna negn, antess? 🙏";
     (decision as any).meta = { ...(decision as any).meta, fallback: "small_talk" };
   }
 
