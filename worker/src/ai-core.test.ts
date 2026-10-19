@@ -41,6 +41,11 @@ describe("contact classification", () => {
     const m = buildMessages({ businessName: "B", businessType: "", tone: "t", rules: "", hours: "", languageMode: "match", knowledge: [], history: [], incoming: "selam", relationship: "family", personalTone: "respectful, calls elders ክቡር" });
     expect(m[0].content).toContain("respectful, calls elders ክቡር"); expect(m[0].content).toMatch(/NOTHING about the owner/);
   });
+  it("tells the model plain greetings from friends are not urgent", async () => {
+    const { buildMessages } = await import("./ai-core.js");
+    const m = buildMessages({ businessName: "B", businessType: "", tone: "t", rules: "", hours: "", languageMode: "match", knowledge: [], history: [], incoming: "Gwandenaye endet neh", relationship: "friend" });
+    expect(m[0].content).toMatch(/NOT urgent/); expect(m[0].content).toMatch(/do NOT set needs_human/);
+  });
   it("uses the personal prompt (no business knowledge) for friends", async () => {
     const { buildMessages } = await import("./ai-core.js");
     const m = buildMessages({ businessName: "B", businessType: "", tone: "t", rules: "", hours: "", languageMode: "match", knowledge: [], history: [], incoming: "selam", relationship: "friend" });
