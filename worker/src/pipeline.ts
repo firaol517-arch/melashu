@@ -43,6 +43,14 @@ async function ownerStyle(businessId: string, convId: string, rel: "customer" | 
 }
 
 export async function handleIncoming(m: Incoming, send: Sender, typing: Typing) {
+  try { await handleIncomingInner(m, send, typing); }
+  catch (err: any) {            // never fail silently: record why a message got no reply
+    log.error({ err: err?.message }, "handleIncoming crashed");
+    try { await audit(m.businessId, "ai.error", { message: String(err?.message ?? err).slice(0, 200) }); } catch {}
+  }
+}
+
+async function handleIncomingInner(m: Incoming, send: Sender, typing: Typing) {
   if (m.fromSelf || m.isBot) return;                       // never process own messages or bots
   return serialize(`${m.businessId}:${m.tgChatId}`, () => process_(m, send, typing));
 }
@@ -67,7 +75,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     const { data, error } = await db.from("sec_messages").insert({
       business_id: m.businessId, conversation_id: conv.id, tg_message_id: m.tgMessageId, direction: "in", sender: "customer",
       body: m.text || "[non-text message]", status: "received" }).select("id").single();
-    if (error) { if (error.code === "23505") return log.debug("duplicate message ignored"); return log.error({ code: error.code }, "message insert failed"); }
+    if (error) { if (error.code === "23505") return log.debug("duplicate message ignored"); await audit(m.businessId, "ai.error", { message: "message insert failed " + error.code }); return log.error({ code: error.code }, "message insert failed"); }
     inserted = data;
     await db.from("sec_conversations").update({ unread_count: (conv.unread_count ?? 0) + 1, last_message_at: new Date().toISOString(),
       last_message_preview: (m.text || "[non-text message]").slice(0, 80) }).eq("id", conv.id);
@@ -163,7 +171,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   const dry = again.st.dry_run;
   const { data: out, error: e2 } = await db.from("sec_messages").insert({ business_id: m.businessId, conversation_id: conv.id, direction: "out",
     sender: "ai", body: decision.reply, status: dry ? "dry_run" : "sending", reply_to_message_id: inserted.id, ai_meta: decision.meta }).select("id").single();
-  if (e2) { if (e2.code === "23505") return log.debug("already replied"); return log.error({ code: e2.code }, "reply insert failed"); }
+  if (e2) { if (e2.code === "23505") { await audit(m.businessId, "ai.skipped", { reason: "already_replied" }); return log.debug("already replied"); } { await audit(m.businessId, "ai.error", { message: "reply insert failed " + e2.code }); return log.error({ code: e2.code }, "reply insert failed"); } }
   if (dry) { await audit(m.businessId, "ai.dry_run_reply"); return; }
 
   // 7) Send, and only mark 'sent' when Telegram returns a message id.
