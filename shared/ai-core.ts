@@ -229,3 +229,12 @@ Respond ONLY with JSON: {"kind":"customer"|"friend"|"family"|"unknown","confiden
     const p = ClassifySchema.safeParse(extractJson(raw)); return p.success ? p.data : unknown;
   } catch { return unknown; }
 }
+
+// ───────── small talk ─────────
+const SMALL = new Set(("hi hello hey hola selam sellam salam selamta endet neh nesh nachu nacha endemin amesh aderu dehna dehnaneh dehnanesh dehnanachu des yilal eshi eshy ok okay okk thanks thank you tnx ameseginalehu amesegnalew yimesgen bye ciao chaw chao goodnight gn tena yistilign yistilgn how are u doing bedgame bedegame degame gwadenaye gwandenaye gwadegna wendime wondime wendeme ye ante ene negn mn new tadiya tadia ደህና ሰላም ሰላምታ እንዴት ነህ ነሽ ናችሁ ቻው አመሰግናለሁ እሺ ጓደኛዬ ወንድሜ ደግሞ በደግሜ ዛሬ").split(" "));
+
+/** True for plain greetings / check-ins / farewells ("Hi endet neh", "bye", "እንዴት ነህ") — messages that never need the owner and must not inherit urgency from earlier chat. */
+export function isSmallTalk(text: string): boolean {
+  const t = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
+  return t.length > 0 && t.length <= 7 && t.every((w) => SMALL.has(w));
+}

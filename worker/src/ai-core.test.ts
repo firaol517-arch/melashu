@@ -125,3 +125,13 @@ describe("extractJson (provider output quirks)", () => {
     expect(await generateDecision(fake, { businessName: "B", businessType: "", tone: "t", rules: "", hours: "", languageMode: "match", knowledge: [], history: [], incoming: "ሰላም", model: "m", jsonMode: false })).toMatchObject({ action: "send" });
   });
 });
+
+import { isSmallTalk } from "./ai-core";
+describe("isSmallTalk", () => {
+  it("detects greetings and farewells", () => {
+    for (const t of ["Hi endet neh", "Endet neh", "bye", "ጓደኛዬ እንዴት ነህ?", "selam"]) expect(isSmallTalk(t)).toBe(true);
+  });
+  it("rejects real requests", () => {
+    for (const t of ["ahun lanagrh new mfelgew", "send me 500 birr", "hi can you come at 5?"]) expect(isSmallTalk(t)).toBe(false);
+  });
+});
