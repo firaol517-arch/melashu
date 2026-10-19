@@ -1,0 +1,1 @@
+alter table public.sec_settings add column if not exists tone_friend text not null default '', add column if not exists tone_family text not null default '';  -- owner-taught tone/instructions for personal replies

@@ -9,6 +9,7 @@ export type Settings = {
   language_mode: "match" | "am" | "en"; response_rules: string; ai_model: string;
   max_replies_per_hour: number; reply_delay_seconds: number;
   reply_to_friends?: boolean; reply_to_family?: boolean;   // personal-tone replies to chats classified friend / family
+  tone_friend?: string; tone_family?: string;   // owner-taught tone / instructions per relationship
   auto_classify?: boolean;     // let the AI guess customer / friend / family for new chats
   learn_style?: boolean;       // false → never send the owner's past replies to the AI provider
   classify_new?: boolean;      // true → chats without a contact_kind get no reply until the owner classifies them
@@ -123,6 +124,7 @@ export function buildMessages(o: {
   languageMode: Settings["language_mode"]; knowledge: Knowledge[];
   history: { role: "customer" | "us"; text: string }[]; incoming: string;
   relationship?: "customer" | "friend" | "family" | null;
+  personalTone?: string;        // owner-taught tone for friend / family replies
   styleExamples?: string[];     // the owner's own past replies — imitate tone/length/greetings, never copy facts
 }) {
   const target = o.languageMode === "match" ? "Reply in the same language as the customer's latest message (Amharic ↔ አማርኛ, English ↔ English)." :
@@ -136,7 +138,7 @@ export function buildMessages(o: {
     const who = o.relationship === "family" ? "a family member" : "a friend";
     const personal = `You are the personal assistant of the account owner, replying on their behalf to ${who}.
 ${target}
-Tone: warm, casual, short, natural, like a real Telegram message. You are NOT the owner — never claim to be them; if asked, say you are their assistant.
+Tone and style (set by the owner — follow it, within the rules below): ${o.personalTone?.trim() || "warm, casual, short, natural, like a real Telegram message"}. You are NOT the owner — never claim to be them; if asked, say you are their assistant.
 STRICT RULES:
 - You know NOTHING about the owner's private life: location, plans, health, money, feelings, relationships, news. Never invent or guess any of it.
 - Allowed: greetings, polite small talk, acknowledging the message, saying the owner will reply personally soon.

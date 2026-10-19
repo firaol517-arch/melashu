@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type KB = { id: string; kind: string; title: string; content: string };
 type Me = { business: { name: string; business_type: string; tone: string; languages: string[]; hours: string };
-  settings: { automation_enabled: boolean; dry_run: boolean; emergency_stop: boolean; reply_to_friends?: boolean; reply_to_family?: boolean; learn_style?: boolean } | null; connection: { status: string } | null;
+  settings: { automation_enabled: boolean; dry_run: boolean; emergency_stop: boolean; reply_to_friends?: boolean; reply_to_family?: boolean; learn_style?: boolean; tone_friend?: string; tone_family?: string } | null; connection: { status: string } | null;
   knowledge: KB[]; agreed: boolean; tested: boolean; botUsername: string; workerOnline: boolean };
 type Chat = { id: string; name: string; preview: string | null; at: string | null; attention: boolean; reason: string | null; kind: "customer" | "friend" | "family" | "ignore" | null };
 
@@ -139,7 +139,12 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
     {tab === "teach" && <div className="space-y-3"><p className="text-sm text-sage">ረዳቱ የሚያውቀው ይህን ብቻ ነው። ትክክል ያልሆነውን ሰርዝ።</p><KnowledgeEditor me={me} call={call} reload={reload} /></div>}
     {tab === "chats" && (<div className="card space-y-3 p-4"><p className="text-sm font-semibold text-forest">ለግል ሰዎች ረዳቱ ይመልስ?</p><p className="text-xs text-sage">ሞቅ ያለ አጭር መልስ ብቻ፤ ስለ አንተ ምንም አይገምትም፣ ለውሳኔ ወይም ገንዘብ ጥያቄ ላንተ ያስተላልፋል።</p>
       {([["reply_to_friends", "🤝 ጓደኞች"], ["reply_to_family", "👨‍👩‍👧 ቤተሰብ"], ["learn_style", "✍️ ከመልሶቼ አጻጻፍ ተማር"]] as const).map(([k, l]) => { const on = k === "learn_style" ? (me.settings as any)?.learn_style !== false : !!(me.settings as any)?.[k];
-        return <button key={k} onClick={async () => { await call("prefs", "POST", { [k]: !on }); await reload(); }} className="flex w-full items-center justify-between rounded-2xl border border-sand px-4 py-3 text-sm font-semibold"><span>{l}</span><span className={on ? "text-leaf" : "text-sage"}>{k === "learn_style" ? (on ? "በርቷል ✓" : "ጠፍቷል") : (on ? "ይመልሳል ✓" : "አይመልስም")}</span></button>; })}</div>)}
+        return <button key={k} onClick={async () => { await call("prefs", "POST", { [k]: !on }); await reload(); }} className="flex w-full items-center justify-between rounded-2xl border border-sand px-4 py-3 text-sm font-semibold"><span>{l}</span><span className={on ? "text-leaf" : "text-sage"}>{k === "learn_style" ? (on ? "በርቷል ✓" : "ጠፍቷል") : (on ? "ይመልሳል ✓" : "አይመልስም")}</span></button>; })}
+      {([["tone_friend", "🤝 ለጓደኞች ቃና / መመሪያ", "ለምሳሌ፦ ተጫዋች፣ አጭር፣ በአማርኛ፣ ኢሞጂ ተጠቀም"], ["tone_family", "👨‍👩‍👧 ለቤተሰብ ቃና / መመሪያ", "ለምሳሌ፦ አክብሮት ያለው፣ ሞቅ ያለ፣ አጭር"]] as const).map(([k, l, ph]) =>
+        <label key={k} className="block text-sm font-semibold text-forest">{l}<textarea defaultValue={(me.settings as any)?.[k] ?? ""} maxLength={500} rows={2} placeholder={ph}
+          onBlur={async (e) => { if (e.target.value !== ((me.settings as any)?.[k] ?? "")) { await call("prefs", "POST", { [k]: e.target.value }); await reload(); } }}
+          className="mt-1 w-full rounded-2xl border border-sand bg-ivory p-3 text-sm font-normal" /></label>)}
+    </div>)}
     {tab === "chats" && (<div className="space-y-2">{chats.length === 0 && <p className="card p-6 text-center text-sage">ገና ቻት የለም።</p>}
       {chats.map((c) => <div key={c.id} className="card p-4"><p className="flex items-center gap-2 font-semibold">{c.name || "ደንበኛ"}{c.attention && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ትኩረት</span>}{!c.kind && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ያልተለየ</span>}</p><p className="truncate text-sm text-sage">{c.preview}</p>
         <div className="mt-3 flex flex-wrap gap-2">{([["customer", "💼 ደንበኛ"], ["friend", "🤝 ጓደኛ"], ["family", "👨‍👩‍👧 ቤተሰብ"], ["ignore", "🚫 ችላ"]] as const).map(([k, l]) =>

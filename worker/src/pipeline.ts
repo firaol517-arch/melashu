@@ -137,7 +137,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   const styleExamples = again.st.learn_style === false ? [] : await ownerStyle(m.businessId, conv.id, relationship);
   const knowledge = relationship === "customer" ? retrieveKnowledge(m.text, kb ?? []) : [];
   const decision = await generateDecision(openai as any, { businessName: biz.name, businessType: biz.business_type, tone: biz.tone,
-    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, styleExamples, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });
+    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, styleExamples, personalTone: relationship === "friend" ? again.st.tone_friend : relationship === "family" ? again.st.tone_family : undefined, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });
 
   if (decision.action === "flag") {
     if (decision.reason === "ai_provider_error") log.warn({ detail: (decision as any).detail, model: config.aiModel }, "ai provider error");
