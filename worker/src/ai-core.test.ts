@@ -44,7 +44,7 @@ describe("contact classification", () => {
   it("tells the model plain greetings from friends are not urgent", async () => {
     const { buildMessages } = await import("./ai-core.js");
     const m = buildMessages({ businessName: "B", businessType: "", tone: "t", rules: "", hours: "", languageMode: "match", knowledge: [], history: [], incoming: "Gwandenaye endet neh", relationship: "friend" });
-    expect(m[0].content).toMatch(/NOT urgent/); expect(m[0].content).toMatch(/do NOT set needs_human/);
+    expect(m[0].content).toMatch(/NOT urgent/); expect(m[0].content).toMatch(/Do NOT set needs_human/);
   });
   it("personal prompt ignores earlier urgency and answers farewells", async () => {
     const { buildMessages } = await import("./ai-core.js");
@@ -54,7 +54,7 @@ describe("contact classification", () => {
   it("uses the personal prompt (no business knowledge) for friends", async () => {
     const { buildMessages } = await import("./ai-core.js");
     const m = buildMessages({ businessName: "B", businessType: "", tone: "t", rules: "", hours: "", languageMode: "match", knowledge: [], history: [], incoming: "selam", relationship: "friend" });
-    expect(m[0].content).toMatch(/personal assistant/); expect(m[0].content).not.toMatch(/BUSINESS KNOWLEDGE/);
+    expect(m[0].content).toMatch(/personal Telegram replies/); expect(m[0].content).not.toMatch(/BUSINESS KNOWLEDGE/);
   });
   it("customer still respects pause and quiet rules", () => expect(run({}, { contact_kind: "customer", ai_paused: true })).toMatchObject({ reason: "conversation_paused" }));
 });
