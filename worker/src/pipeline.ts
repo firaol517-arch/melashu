@@ -143,7 +143,11 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     if (decision.reason === "ai_provider_error") log.warn({ detail: (decision as any).detail, model: config.aiModel }, "ai provider error");
     await db.from("sec_conversations").update({ needs_attention: true, attention_reason: decision.reason }).eq("id", conv.id);
     await audit(m.businessId, "ai.flagged", { reason: decision.reason, detail: (decision as any).detail });
-    void hooks.notify(m.businessId, `🔔 ${m.name} ጋር ያንተ ትኩረት ያስፈልጋል (${decision.reason}):\n"${m.text.slice(0, 140)}"\n\nበቀጥታ መልስ ስጠው።`).catch(() => {});
+    const recent = conv.last_flag_notified_at && Date.now() - new Date(conv.last_flag_notified_at).getTime() < 15 * 60_000;   // one DM per chat per 15 min
+    if (!recent) {
+      await db.from("sec_conversations").update({ last_flag_notified_at: new Date().toISOString() }).eq("id", conv.id);
+      void hooks.notify(m.businessId, `🔔 ${m.name} ጋር ያንተ ትኩረት ያስፈልጋል (${decision.reason}):\n"${m.text.slice(0, 140)}"\n\nበቀጥታ መልስ ስጠው።`).catch(() => {});
+    }
     return;
   }
 
