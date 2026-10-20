@@ -78,7 +78,10 @@ async function onDirectMessage(m: any) {
   if (cmd === "/status") {
     if (!biz) return void say(m.chat.id, "ገና ንግድ አላዘጋጀህም።", true);
     const [{ data: s }, { data: c }] = await Promise.all([db.from("sec_settings").select("automation_enabled,dry_run").eq("business_id", biz).single(), db.from("sec_telegram_connections").select("status").eq("business_id", biz).maybeSingle()]);
-    return void say(m.chat.id, `ግንኙነት: ${c?.status ?? "—"}\nረዳት: ${s?.automation_enabled ? (s.dry_run ? "ሙከራ (አይልክም)" : "በርቷል ✅") : "ቆሟል"}`);
+    const { data: last } = await db.from("sec_messages").select("created_at").eq("business_id", biz).eq("sender", "ai").eq("status", "sent").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: err } = await db.from("sec_activity_logs").select("event,created_at").eq("business_id", biz).in("event", ["ai.flagged", "ai.error"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const ago = (t?: string) => { if (!t) return "—"; const mm = Math.round((Date.now() - new Date(t).getTime()) / 60000); return mm < 60 ? `ከ${mm} ደቂቃ በፊት` : mm < 1440 ? `ከ${Math.round(mm / 60)} ሰዓት በፊት` : `ከ${Math.round(mm / 1440)} ቀን በፊት`; };
+    return void say(m.chat.id, `ግንኙነት: ${c?.status ?? "—"}\nረዳት: ${s?.automation_enabled ? (s.dry_run ? "ሙከራ (አይልክም)" : "በርቷል ✅") : "ቆሟል"}\nየመጨረሻ መልስ: ${ago(last?.created_at)}\nየመጨረሻ ማስጠንቀቂያ/ስህተት: ${ago(err?.created_at)}`);
   }
   if (cmd === "/start" || cmd === "/help" || !biz)
     return void say(m.chat.id, `ሰላም ${u.first_name ?? ""}! 👋\nእኔ ደንበኞችህን በራስህ ስም በአማርኛና በእንግሊዝኛ የምመልስ AI ጸሐፊ ነኝ።\n\n1️⃣ አፑን ክፈት\n2️⃣ ስለ ንግድህ ጥቂት ጥያቄዎችን መልስ\n3️⃣ ስትስማማ ከ Telegram አካውንትህ አገናኝ\n\nትዕዛዞች: /status · /pause · /resume`, true);

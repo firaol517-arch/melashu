@@ -19,6 +19,7 @@ export const hooks = {
   ask: async (_businessId: string, _convId: string, _name: string, _preview: string, _note?: string): Promise<void> => {},   // ask the owner who a new chat is
 };
 
+const aiAlertAt = new Map<string, number>();
 const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl, timeout: 12_000, maxRetries: 0 }) : null;
 const fallbackAi = config.fallbackKey && config.fallbackModel ? new OpenAI({ apiKey: config.fallbackKey, baseURL: config.fallbackBaseUrl, timeout: 12_000, maxRetries: 0 }) : null;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -166,6 +167,11 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     if (decision.reason === "ai_provider_error") log.warn({ detail: (decision as any).detail, model: config.aiModel }, "ai provider error");
     await db.from("sec_conversations").update({ needs_attention: true, attention_reason: decision.reason }).eq("id", conv.id);
     await audit(m.businessId, "ai.flagged", { reason: decision.reason, detail: (decision as any).detail });
+    if (decision.reason === "ai_provider_error" || decision.reason === "ai_empty_response") {   // outage: one clear business-wide alert per hour instead of one per chat
+      const last = aiAlertAt.get(m.businessId) ?? 0;
+      if (Date.now() - last > 3600_000) { aiAlertAt.set(m.businessId, Date.now()); void hooks.notify(m.businessId, "⚠️ AI አሁን እየሰራ አይደለም (quota ወይም ከፍተኛ ጭነት)። ሰዎች መልስ እያገኙ ላይሆን ይችላል።\n\nመፍትሄ፦ በ Render ውስጥ AI_MODEL ወይም AI_FALLBACK_* ን ፈትሽ፣ ወይም Gemini billing አብራ።").catch(() => {}); }
+      return;
+    }
     const recent = conv.last_flag_notified_at && Date.now() - new Date(conv.last_flag_notified_at).getTime() < 15 * 60_000;   // one DM per chat per 15 min
     if (!recent) {
       await db.from("sec_conversations").update({ last_flag_notified_at: new Date().toISOString() }).eq("id", conv.id);
