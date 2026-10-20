@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type KB = { id: string; kind: string; title: string; content: string };
 type Me = { business: { name: string; business_type: string; tone: string; languages: string[]; hours: string };
   settings: { automation_enabled: boolean; dry_run: boolean; emergency_stop: boolean; reply_to_friends?: boolean; reply_to_family?: boolean; learn_style?: boolean; tone_friend?: string; tone_family?: string } | null; connection: { status: string } | null;
-  knowledge: KB[]; agreed: boolean; tested: boolean; botUsername: string; workerOnline: boolean };
+  knowledge: KB[]; personal?: KB[]; agreed: boolean; tested: boolean; botUsername: string; workerOnline: boolean };
 type Chat = { id: string; name: string; preview: string | null; at: string | null; attention: boolean; reason: string | null; kind: "customer" | "friend" | "family" | "ignore" | null };
 
 const tg = () => (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
@@ -144,6 +144,7 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
         <label key={k} className="block text-sm font-semibold text-forest">{l}<textarea defaultValue={(me.settings as any)?.[k] ?? ""} maxLength={500} rows={2} placeholder={ph}
           onBlur={async (e) => { if (e.target.value !== ((me.settings as any)?.[k] ?? "")) { await call("prefs", "POST", { [k]: e.target.value }); await reload(); } }}
           className="mt-1 w-full rounded-2xl border border-sand bg-ivory p-3 text-sm font-normal" /></label>)}
+      <PersonalTeach me={me} call={call} reload={reload} />
     </div>)}
     {tab === "chats" && (<div className="space-y-2">{chats.length === 0 && <p className="card p-6 text-center text-sage">ገና ቻት የለም።</p>}
       {chats.map((c) => <div key={c.id} className="card p-4"><p className="flex items-center gap-2 font-semibold">{c.name || "ደንበኛ"}{c.attention && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ትኩረት</span>}{!c.kind && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ያልተለየ</span>}</p><p className="truncate text-sm text-sage">{c.preview}</p>
@@ -151,6 +152,21 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
           <button key={k} onClick={async () => { const r = await call("classify", "POST", { id: c.id, kind: k }); if (r.ok) setChats((all) => all.map((x) => x.id === c.id ? { ...x, kind: k } : x)); }}
             className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${c.kind === k ? "border-forest bg-forest text-ivory" : "border-sand text-forest"}`}>{l}</button>)}</div></div>)}</div>)}
   </>);
+}
+
+function PersonalTeach({ me, call, reload }: P) {
+  const [aud, setAud] = useState<"friend" | "family">("friend"); const [q, setQ] = useState(""); const [a, setA] = useState(""); const [busy, setBusy] = useState(false);
+  const items = (me.personal ?? []).filter((i) => i.kind === aud);
+  return (<div className="space-y-2 border-t border-sand pt-3">
+    <p className="text-sm font-semibold text-forest">🎓 አስተምረው፦ ሲሉ → እኔ የምመልሰው</p>
+    <p className="text-xs text-sage">ጓደኛ ወይም ቤተሰብ አንድ ነገር ሲል እንዴት እንደምትመልስ ጻፍ፤ ረዳቱ በዚያው መንገድ ይመልሳል። ያልጻፍከውን ስለ አንተ አይፈጥርም።</p>
+    <div className="flex gap-2">{([["friend", "🤝 ጓደኛ"], ["family", "👨‍👩‍👧 ቤተሰብ"]] as const).map(([k, l]) => <button key={k} onClick={() => setAud(k)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${aud === k ? "border-forest bg-forest text-ivory" : "border-sand text-forest"}`}>{l}</button>)}</div>
+    {items.map((i) => <div key={i.id} className="flex items-start gap-3 rounded-2xl border border-sand p-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{i.title}</p><p className="text-xs text-sage">→ {i.content}</p></div>
+      <button aria-label="ሰርዝ" className="text-sage" onClick={async () => { await call(`knowledge?id=${i.id}`, "DELETE"); await reload(); }}>✕</button></div>)}
+    <form className="space-y-2" onSubmit={async (e) => { e.preventDefault(); setBusy(true); const r = await call("knowledge", "POST", { kind: aud, title: q, content: a }); setBusy(false); if (r.ok) { setQ(""); setA(""); await reload(); } }}>
+      <input className="input" required maxLength={200} placeholder="ሲሉ፦ ለምሳሌ፦ ዛሬ ትገናኛለህ?" value={q} onChange={(e) => setQ(e.target.value)} />
+      <textarea className="input min-h-16" required maxLength={500} placeholder="እኔ የምመልሰው፦ ለምሳሌ፦ ዛሬ ስራ ላይ ነኝ፣ ማታ እደውልልሃለሁ" value={a} onChange={(e) => setA(e.target.value)} />
+      <button className="btn btn-gold w-full" disabled={busy}>+ አስተምር</button></form></div>);
 }
 
 function KnowledgeEditor({ me, call, reload }: P) {

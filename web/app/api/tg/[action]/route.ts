@@ -48,7 +48,7 @@ const bizSchema = z.object({
   hours: z.string().trim().max(400).default(""), location: z.string().trim().max(400).default(""),
   tone: z.string().trim().min(2).max(300).default("friendly, polite, concise"), languages: z.array(z.enum(["am", "en"])).min(1).default(["am", "en"]),
 });
-const kbSchema = z.object({ kind: z.enum(["faq", "product", "service", "price", "hours", "policy"]), title: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(4000) });
+const kbSchema = z.object({ kind: z.enum(["faq", "product", "service", "price", "hours", "policy", "friend", "family"]), title: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(4000) });
 
 export async function GET(req: Request, { params }: { params: Promise<{ action: string }> }) {
   const { action } = await params; const s = await session(req); if (!s) return err("unauthorized", 401);
@@ -63,7 +63,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
     ]);
     const hours = (s.biz.business_hours as any)?.text ?? "";
     return json({ business: { name: s.biz.name, business_type: s.biz.business_type, tone: s.biz.tone, languages: s.biz.languages, hours },
-      settings, connection: conn, knowledge: kb ?? [], agreed: !!owner?.agreed_at, tested: (tests ?? 0) > 0,
+      settings, connection: conn, knowledge: (kb ?? []).filter((k) => k.kind !== "friend" && k.kind !== "family"), personal: (kb ?? []).filter((k) => k.kind === "friend" || k.kind === "family"), agreed: !!owner?.agreed_at, tested: (tests ?? 0) > 0,
       botUsername: process.env.PLATFORM_BOT_USERNAME ?? "qeltafaw_bot",
       workerOnline: !!conn?.last_heartbeat_at && Date.now() - new Date(conn.last_heartbeat_at).getTime() < 120_000 });
   }
@@ -116,7 +116,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
       admin.from("sec_settings").select("response_rules,language_mode,ai_model").eq("business_id", id).single(),
       admin.from("sec_knowledge").select("id,kind,title,content").eq("business_id", id).eq("active", true).limit(300),
     ]);
-    const knowledge = retrieveKnowledge(msg.data, kb ?? []);
+    const knowledge = retrieveKnowledge(msg.data, (kb ?? []).filter((k) => k.kind !== "friend" && k.kind !== "family"));
     const decision = await generateDecision(new OpenAI({ apiKey, baseURL }) as any, { businessName: s.biz.name, businessType: s.biz.business_type, tone: s.biz.tone,
       rules: st?.response_rules ?? "", hours: (s.biz.business_hours as any)?.text ?? "", languageMode: st?.language_mode ?? "match", knowledge, history: [], incoming: msg.data, model: model || st?.ai_model || "gpt-4o-mini", jsonMode });
     await log(id, "ai.test", { action: decision.action });

@@ -145,9 +145,11 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   const smallTalk = relationship !== "customer" && isSmallTalk(m.text);                      // plain greeting from a friend/family → never inherit earlier urgency
   const history = smallTalk ? [] : (hist ?? []).reverse().slice(0, -1).map((h) => ({ role: (h.sender === "customer" ? "customer" : "us") as "customer" | "us", text: h.body }));
   const styleExamples = again.st.learn_style === false ? [] : await ownerStyle(m.businessId, conv.id, relationship);
-  const knowledge = relationship === "customer" ? retrieveKnowledge(m.text, kb ?? []) : [];
+  const bizKb = (kb ?? []).filter((k) => k.kind !== "friend" && k.kind !== "family");
+  const knowledge = relationship === "customer" ? retrieveKnowledge(m.text, bizKb) : [];
+  const ownerNotes = relationship === "customer" ? [] : (kb ?? []).filter((k) => k.kind === relationship).slice(0, 40).map((k) => ({ title: k.title, content: k.content }));
   const decArgs = { businessName: biz.name, businessType: biz.business_type, tone: biz.tone,
-    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, styleExamples, personalTone: relationship === "friend" ? again.st.tone_friend : relationship === "family" ? again.st.tone_family : undefined, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl };
+    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, styleExamples, ownerNotes, personalTone: relationship === "friend" ? again.st.tone_friend : relationship === "family" ? again.st.tone_family : undefined, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl };
   let decision = await generateDecision(openai as any, decArgs);
   if (decision.action === "flag" && (decision.reason === "ai_provider_error" || decision.reason === "ai_empty_response") && fallbackAi) {
     await audit(m.businessId, "ai.fallback_used", { primary: String((decision as any).detail ?? "").slice(0, 80) });

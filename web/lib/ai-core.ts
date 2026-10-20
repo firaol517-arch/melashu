@@ -125,6 +125,7 @@ export function buildMessages(o: {
   history: { role: "customer" | "us"; text: string }[]; incoming: string;
   relationship?: "customer" | "friend" | "family" | null;
   personalTone?: string;        // owner-taught tone for friend / family replies
+  ownerNotes?: { title: string; content: string }[];   // things the owner taught for this friend/family category: "when they say X → I answer Y"
   styleExamples?: string[];     // the owner's own past replies — imitate tone/length/greetings, never copy facts
 }) {
   const target = o.languageMode === "match" ? "Reply in the same language as the customer's latest message (Amharic ↔ አማርኛ, English ↔ English)." :
@@ -135,6 +136,7 @@ export function buildMessages(o: {
     ? o.knowledge.map((k) => `[#${k.id}] (${k.kind}) ${k.title}: ${k.content}`).join("\n")
     : "(no relevant knowledge found)";
   if (o.relationship === "friend" || o.relationship === "family") {
+    const notes = o.ownerNotes?.length ? `\nTHINGS THE OWNER TAUGHT YOU (their own words — when a message matches, answer the way they taught; these are the only personal facts you may use):\n${o.ownerNotes.map((n) => `- When they say/ask: ${n.title} → owner's answer: ${n.content}`).join("\n")}` : "";
     const who = o.relationship === "family" ? "a family member" : "a friend";
     const personal = `You write the owner's personal Telegram replies to ${who}, in the owner's own voice (first person, like a real friend texting).
 ${target}
@@ -147,7 +149,7 @@ STRICT RULES:
 - Judge urgency ONLY from the LATEST message. Earlier messages are context: if the person earlier asked to talk and the owner was already told, a new plain greeting or farewell is NOT urgent again — just answer it briefly.
 - Set needs_human=true ONLY when the latest message really asks for a decision, commitment, money, a place/time, news, or help; or is urgent (emergency, "call me now"), emotional, or sensitive.
 - Do not mention any business, prices, or products. Do not share links or numbers.
-Owner's extra rules: ${o.rules || "(none)"}${style}
+Owner's extra rules: ${o.rules || "(none)"}${notes}${style}
 Respond ONLY with JSON: {"reply": string, "language": "am"|"en", "confidence": 0..1, "needs_human": boolean, "reason": string, "used_knowledge_ids": []}`;
     return [
       { role: "system" as const, content: personal },

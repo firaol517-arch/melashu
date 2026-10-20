@@ -144,3 +144,12 @@ describe("offlineSmallTalk", () => {
     expect(offlineSmallTalk("bye")).toMatch(/chaw|chao|Ishi/i);
   });
 });
+
+describe("owner-taught notes for personal chats", () => {
+  it("are included for friends and never for customers", async () => {
+    const { buildMessages } = await import("./ai-core.js");
+    const base = { businessName: "B", businessType: "", tone: "t", rules: "", hours: "", languageMode: "match" as const, knowledge: [], history: [], incoming: "ዛሬ ትገናኛለህ?", ownerNotes: [{ title: "ዛሬ ትገናኛለህ?", content: "ማታ እደውላለሁ" }] };
+    expect(buildMessages({ ...base, relationship: "friend" })[0].content).toMatch(/ማታ እደውላለሁ/);
+    expect(buildMessages({ ...base, relationship: "customer" })[0].content).not.toMatch(/ማታ እደውላለሁ/);
+  });
+});
