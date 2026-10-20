@@ -93,12 +93,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   if (!conv.contact_kind && settings.auto_classify !== false && openai) {
     const { data: recent } = await db.from("sec_messages").select("body").eq("conversation_id", conv.id).eq("sender", "customer").order("created_at", { ascending: false }).limit(6);
     if ((recent?.length ?? 0) <= 6) {
-      const c = await classifyContact(openai as any, { name: m.name, username: m.username, businessType: biz.business_type, messages: (recent ?? []).map((r) => r.body).reverse(), model: config.aiModel ?? settings.ai_model, jsonMode: !config.aiBaseUrl };
-  let decision = await generateDecision(openai as any, decArgs);
-  if (decision.action === "flag" && (decision.reason === "ai_provider_error" || decision.reason === "ai_empty_response") && fallbackAi) {
-    await audit(m.businessId, "ai.fallback_used", { primary: String((decision as any).detail ?? "").slice(0, 80) });
-    decision = await generateDecision(fallbackAi as any, { ...decArgs, model: config.fallbackModel!, jsonMode: !config.fallbackBaseUrl });
-  }
+      const c = await classifyContact(openai as any, { name: m.name, username: m.username, businessType: biz.business_type, messages: (recent ?? []).map((r) => r.body).reverse(), model: config.aiModel ?? settings.ai_model, jsonMode: !config.aiBaseUrl });
       if (c.kind !== "unknown" && c.confidence >= 0.75) {
         await audit(m.businessId, "chat.auto_classified", { kind: c.kind, confidence: c.confidence });
         if (c.kind === "customer") { await db.from("sec_conversations").update({ contact_kind: "customer" }).eq("id", conv.id); conv.contact_kind = "customer"; }
@@ -152,7 +147,12 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   const styleExamples = again.st.learn_style === false ? [] : await ownerStyle(m.businessId, conv.id, relationship);
   const knowledge = relationship === "customer" ? retrieveKnowledge(m.text, kb ?? []) : [];
   const decArgs = { businessName: biz.name, businessType: biz.business_type, tone: biz.tone,
-    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, styleExamples, personalTone: relationship === "friend" ? again.st.tone_friend : relationship === "family" ? again.st.tone_family : undefined, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl });
+    rules: again.st.response_rules, hours: (biz.business_hours as any)?.text ?? "", languageMode: again.st.language_mode, knowledge, history, incoming: m.text, relationship, styleExamples, personalTone: relationship === "friend" ? again.st.tone_friend : relationship === "family" ? again.st.tone_family : undefined, model: config.aiModel ?? again.st.ai_model, jsonMode: !config.aiBaseUrl };
+  let decision = await generateDecision(openai as any, decArgs);
+  if (decision.action === "flag" && (decision.reason === "ai_provider_error" || decision.reason === "ai_empty_response") && fallbackAi) {
+    await audit(m.businessId, "ai.fallback_used", { primary: String((decision as any).detail ?? "").slice(0, 80) });
+    decision = await generateDecision(fallbackAi as any, { ...decArgs, model: config.fallbackModel!, jsonMode: !config.fallbackBaseUrl });
+  }
 
   if (decision.action === "flag" && smallTalk) {   // a friend's plain greeting/farewell never needs the owner — answer with a safe short reply instead of escalating
     (decision as any).action = "reply";
