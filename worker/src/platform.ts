@@ -63,6 +63,36 @@ async function resolve(bcId: string): Promise<Conn | null> {
   return bc ? registerConnection(bc) : null;
 }
 
+
+// ───────── weekly report ─────────
+async function buildReport(biz: string, days = 7): Promise<string> {
+  const since = new Date(Date.now() - days * 86400_000).toISOString();
+  const cnt = async (q: any) => (await q).count ?? 0;
+  const [inc, sent, flagged, chats, errors] = await Promise.all([
+    cnt(db.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", biz).eq("direction", "in").gte("created_at", since)),
+    cnt(db.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", biz).eq("sender", "ai").eq("status", "sent").gte("created_at", since)),
+    cnt(db.from("sec_activity_logs").select("id", { count: "exact", head: true }).eq("business_id", biz).eq("event", "ai.flagged").gte("created_at", since)),
+    cnt(db.from("sec_conversations").select("id", { count: "exact", head: true }).eq("business_id", biz).gte("last_message_at", since)),
+    cnt(db.from("sec_activity_logs").select("id", { count: "exact", head: true }).eq("business_id", biz).eq("event", "ai.error").gte("created_at", since)),
+  ]);
+  const rate = inc ? Math.min(100, Math.round((sent / inc) * 100)) : 0;
+  return `📊 የ${days === 7 ? "ሳምንቱ" : days + " ቀን"} ሪፖርት\n\n💬 የገቡ መልእክቶች: ${inc}\n🤖 ረዳቱ የመለሰው: ${sent} (${rate}%)\n👥 የተነጋገሩ ቻቶች: ${chats}\n🔔 ወደ አንተ የተላከ (ትኩረት): ${flagged}${errors ? `\n⚠️ ስህተቶች: ${errors}` : ""}\n\nየትኞቹ መልሶች እንዲስተካከሉ ለማየት አፑን ክፈት → ቻቶች።`;
+}
+async function weeklyReports() {
+  const addis = new Date(Date.now() + 3 * 3600_000);                      // Africa/Addis_Ababa (UTC+3, no DST)
+  if (addis.getUTCDay() !== 1 || addis.getUTCHours() !== 9) return;        // Monday 09:00–09:59
+  const { data: owners } = await db.from("sec_owners").select("business_id,bot_chat_id").not("business_id", "is", null);
+  for (const o of owners ?? []) {
+    try {
+      if (!o.bot_chat_id) continue;
+      const { data: done } = await db.from("sec_activity_logs").select("id").eq("business_id", o.business_id).eq("event", "report.weekly").gte("created_at", new Date(Date.now() - 6 * 86400_000).toISOString()).limit(1);
+      if (done?.length) continue;
+      await audit(o.business_id, "report.weekly");
+      await say(Number(o.bot_chat_id), await buildReport(o.business_id));
+    } catch (e: any) { log.warn({ err: e?.message }, "weekly report failed"); }
+  }
+}
+
 async function onDirectMessage(m: any) {
   if (m.chat?.type !== "private" || !m.from || m.from.is_bot) return;
   const u = m.from; const text: string = (m.text ?? "").trim();
@@ -74,6 +104,10 @@ async function onDirectMessage(m: any) {
     const on = cmd === "/resume";
     await db.from("sec_settings").update({ automation_enabled: on }).eq("business_id", biz); await audit(biz, on ? "settings.resumed" : "settings.paused");
     return void say(m.chat.id, on ? "▶️ ረዳቱ እንደገና ይመልሳል።" : "⏸️ ረዳቱ ቆሟል። ደንበኞችን አይመልስም። ለመቀጠል /resume");
+  }
+  if (cmd === "/report") {
+    if (!biz) return void say(m.chat.id, "ገና ንግድ አላዘጋጀህም።", true);
+    return void say(m.chat.id, await buildReport(biz));
   }
   if (cmd === "/status") {
     if (!biz) return void say(m.chat.id, "ገና ንግድ አላዘጋጀህም።", true);
@@ -176,12 +210,13 @@ export async function startPlatform() {
   const me = await api<{ username: string }>(T(), "getMe"); username = me.username;
   await api(T(), "deleteWebhook", { drop_pending_updates: false }).catch(() => {});
   await api(T(), "setChatMenuButton", { menu_button: { type: "web_app", text: "ክፈት", web_app: { url: config.webAppUrl } } }).catch((e) => log.warn({ err: e?.message }, "menu button failed"));
-  await api(T(), "setMyCommands", { commands: [{ command: "start", description: "ጀምር" }, { command: "status", description: "ሁኔታ" }, { command: "pause", description: "ረዳቱን አቁም" }, { command: "resume", description: "ረዳቱን ቀጥል" }] }).catch(() => {});
+  await api(T(), "setMyCommands", { commands: [{ command: "start", description: "ጀምር" }, { command: "status", description: "ሁኔታ" }, { command: "report", description: "የሳምንቱ ሪፖርት" }, { command: "pause", description: "ረዳቱን አቁም" }, { command: "resume", description: "ረዳቱን ቀጥል" }] }).catch(() => {});
   await loadConnections();
   hooks.ask = askOwner;
   hooks.notify = async (businessId, text) => {
     const { data } = await db.from("sec_owners").select("bot_chat_id").eq("business_id", businessId).maybeSingle();
     if (data?.bot_chat_id) await say(Number(data.bot_chat_id), text);
   };
+  setInterval(() => void weeklyReports(), 10 * 60_000).unref?.();
   running = true; void loop(); log.info({ bot: username, connections: byBc.size }, "platform bot running");
 }
