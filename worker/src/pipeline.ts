@@ -19,8 +19,8 @@ export const hooks = {
   ask: async (_businessId: string, _convId: string, _name: string, _preview: string, _note?: string): Promise<void> => {},   // ask the owner who a new chat is
 };
 
-const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl, timeout: 25_000, maxRetries: 1 }) : null;
-const fallbackAi = config.fallbackKey && config.fallbackModel ? new OpenAI({ apiKey: config.fallbackKey, baseURL: config.fallbackBaseUrl, timeout: 25_000, maxRetries: 1 }) : null;
+const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl, timeout: 12_000, maxRetries: 0 }) : null;
+const fallbackAi = config.fallbackKey && config.fallbackModel ? new OpenAI({ apiKey: config.fallbackKey, baseURL: config.fallbackBaseUrl, timeout: 12_000, maxRetries: 0 }) : null;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Per-chat serialization so two messages in one chat never race each other.
