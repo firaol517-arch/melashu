@@ -154,9 +154,9 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     decision = await generateDecision(fallbackAi as any, { ...decArgs, model: config.fallbackModel!, jsonMode: !config.fallbackBaseUrl });
   }
 
-  if (decision.action === "flag" && smallTalk) {   // a friend's plain greeting/farewell never needs the owner — answer with a safe short reply instead of escalating
+  if (decision.action === "flag" && isSmallTalk(m.text) && (decision.reason === "ai_provider_error" || decision.reason === "ai_empty_response" || relationship !== "customer")) {   // a friend's plain greeting/farewell never needs the owner — answer with a safe short reply instead of escalating
     (decision as any).action = "reply";
-    (decision as any).reply = offlineSmallTalk(m.text);
+    (decision as any).reply = offlineSmallTalk(m.text, relationship === "customer");
     (decision as any).meta = { ...(decision as any).meta, fallback: "small_talk" };
   }
 

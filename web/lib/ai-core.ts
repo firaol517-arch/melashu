@@ -240,10 +240,11 @@ export function isSmallTalk(text: string): boolean {
 }
 
 /** Rule-based reply for plain small talk, used when the AI provider is down (quota/outage) so friends and family still get an answer. */
-export function offlineSmallTalk(text: string): string {
+export function offlineSmallTalk(text: string, formal = false): string {
   const am = /[\u1200-\u137F]/.test(text);
   const low = text.toLowerCase();
   const has = (...w: string[]) => w.some((x) => low.includes(x));
+  if (formal && !has("bye", "chaw", "ciao", "ቻው", "thank", "ameseginalehu", "amesegnalew", "yimesgen", "አመሰግናለሁ")) return am ? "ሰላም! እንዴት ልርዳዎት?" : "Selam! Endet lagelglot?";
   const pick = (a: string[], l: string[]) => { const arr = am ? a : l; return arr[Math.floor(Math.random() * arr.length)]; };
   if (has("bye", "chaw", "ciao", "ቻው", "goodnight", "tena yistilign")) return pick(["ቻው! በደህና 🙏", "ደህና እደር/ዋል 👋"], ["Chaw! Bedehna 🙏", "Ishi chaw 👋"]);
   if (has("thank", "ameseginalehu", "amesegnalew", "yimesgen", "አመሰግናለሁ", "ymesgen")) return pick(["ምንም አይደል! 😊", "ችግር የለም 🙏"], ["Minim ayidel! 😊", "Chigir yelem 🙏"]);
