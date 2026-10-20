@@ -19,8 +19,8 @@ export const hooks = {
   ask: async (_businessId: string, _convId: string, _name: string, _preview: string, _note?: string): Promise<void> => {},   // ask the owner who a new chat is
 };
 
-const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl }) : null;
-const fallbackAi = config.fallbackKey && config.fallbackModel ? new OpenAI({ apiKey: config.fallbackKey, baseURL: config.fallbackBaseUrl }) : null;
+const openai = config.aiKey ? new OpenAI({ apiKey: config.aiKey, baseURL: config.aiBaseUrl, timeout: 25_000, maxRetries: 1 }) : null;
+const fallbackAi = config.fallbackKey && config.fallbackModel ? new OpenAI({ apiKey: config.fallbackKey, baseURL: config.fallbackBaseUrl, timeout: 25_000, maxRetries: 1 }) : null;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Per-chat serialization so two messages in one chat never race each other.
@@ -90,7 +90,7 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
   ]);
   if (!biz || !settings) return;
   // 2b) New chat? Let the AI guess customer / friend / family from what they wrote (only when confident; owner can always correct it).
-  if (!conv.contact_kind && settings.auto_classify !== false && openai) {
+  if (!conv.contact_kind && settings.auto_classify !== false && openai && !isSmallTalk(m.text)) {   // a bare greeting always classifies as "unknown" — skip the wasted AI call
     const { data: recent } = await db.from("sec_messages").select("body").eq("conversation_id", conv.id).eq("sender", "customer").order("created_at", { ascending: false }).limit(6);
     if ((recent?.length ?? 0) <= 6) {
       const c = await classifyContact(openai as any, { name: m.name, username: m.username, businessType: biz.business_type, messages: (recent ?? []).map((r) => r.body).reverse(), model: config.aiModel ?? settings.ai_model, jsonMode: !config.aiBaseUrl });
