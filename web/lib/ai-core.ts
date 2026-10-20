@@ -238,3 +238,16 @@ export function isSmallTalk(text: string): boolean {
   const t = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
   return t.length > 0 && t.length <= 7 && t.every((w) => SMALL.has(w));
 }
+
+/** Rule-based reply for plain small talk, used when the AI provider is down (quota/outage) so friends and family still get an answer. */
+export function offlineSmallTalk(text: string): string {
+  const am = /[\u1200-\u137F]/.test(text);
+  const low = text.toLowerCase();
+  const has = (...w: string[]) => w.some((x) => low.includes(x));
+  const pick = (a: string[], l: string[]) => { const arr = am ? a : l; return arr[Math.floor(Math.random() * arr.length)]; };
+  if (has("bye", "chaw", "ciao", "ቻው", "goodnight", "tena yistilign")) return pick(["ቻው! በደህና 🙏", "ደህና እደር/ዋል 👋"], ["Chaw! Bedehna 🙏", "Ishi chaw 👋"]);
+  if (has("thank", "ameseginalehu", "amesegnalew", "yimesgen", "አመሰግናለሁ", "ymesgen")) return pick(["ምንም አይደል! 😊", "ችግር የለም 🙏"], ["Minim ayidel! 😊", "Chigir yelem 🙏"]);
+  if (has("ene dena", "ene dehna", "dena nen", "dehna nen", "dehna negn", "ደህና ነኝ")) return pick(["ጥሩ ነው፣ ደስ ይላል 😊", "ጎሽ! 👍"], ["Tiru new, des yilal 😊", "Gosh! 👍"]);
+  if (has("endet", "endemin", "እንዴት", "ደህና")) return pick(["ደህና ነኝ፣ አንተስ? 😊", "ሰላም ነው፣ አንተ እንዴት ነህ?"], ["Dehna negn, antess? 😊", "Selam new, ante endet neh?"]);
+  return pick(["ሰላም! 😊 ደህና ነህ?", "ሰላም ወንድሜ 👋"], ["Selam! 😊 Dehna neh?", "Selam wendime 👋"]);
+}

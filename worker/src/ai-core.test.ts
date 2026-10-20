@@ -135,3 +135,12 @@ describe("isSmallTalk", () => {
     for (const t of ["ahun lanagrh new mfelgew", "send me 500 birr", "hi can you come at 5?"]) expect(isSmallTalk(t)).toBe(false);
   });
 });
+
+import { offlineSmallTalk } from "./ai-core";
+describe("offlineSmallTalk", () => {
+  it("answers in the sender's script", () => {
+    expect(offlineSmallTalk("Hi endet neh")).toMatch(/[A-Za-z]/);
+    expect(offlineSmallTalk("ሰላም እንዴት ነህ")).toMatch(/[ሀ-፿]/);
+    expect(offlineSmallTalk("bye")).toMatch(/chaw|chao|Ishi/i);
+  });
+});
