@@ -82,6 +82,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
       .eq("business_id", id).order("last_message_at", { ascending: false, nullsFirst: false }).limit(25);
     return json({ chats: (data ?? []).map((c: any) => ({ id: c.id, name: c.sec_customers?.display_name ?? "", preview: c.last_message_preview, at: c.last_message_at, attention: c.needs_attention, reason: c.attention_reason, kind: c.contact_kind ?? null })) });
   }
+  if (action === "replies") {   // the assistant's latest replies, so the owner can correct them
+    const { data: ai } = await admin.from("sec_messages").select("id,body,reply_to_message_id,conversation_id").eq("business_id", id).eq("sender", "ai").eq("status", "sent").order("created_at", { ascending: false }).limit(10);
+    const qIds = (ai ?? []).map((m: any) => m.reply_to_message_id).filter(Boolean), cIds = [...new Set((ai ?? []).map((m: any) => m.conversation_id))];
+    const [{ data: qs }, { data: cs }] = await Promise.all([
+      qIds.length ? admin.from("sec_messages").select("id,body").in("id", qIds) : Promise.resolve({ data: [] as any[] }),
+      cIds.length ? admin.from("sec_conversations").select("id,contact_kind").in("id", cIds) : Promise.resolve({ data: [] as any[] })]);
+    const qm = new Map((qs ?? []).map((q: any) => [q.id, q.body])), cm = new Map((cs ?? []).map((c: any) => [c.id, c.contact_kind]));
+    return json({ replies: (ai ?? []).map((m: any) => ({ id: m.id, question: qm.get(m.reply_to_message_id) ?? "", answer: m.body, kind: cm.get(m.conversation_id) ?? null })).filter((r) => r.question) });
+  }
   return err("not_found", 404);
 }
 
@@ -108,6 +117,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
     if ((count ?? 0) >= 100) return err("knowledge_limit_reached");
     const { data } = await admin.from("sec_knowledge").insert({ ...p.data, business_id: id }).select("id,kind,title,content").single();
     return json({ item: data });
+  }
+  if (action === "correct") {   // owner fixes a reply → saved as a lesson for that kind of chat
+    const a = z.object({ id: z.string().uuid(), answer: z.string().trim().min(1).max(1000) }).safeParse(body); if (!a.success) return err("invalid_input");
+    const { data: m } = await admin.from("sec_messages").select("reply_to_message_id,conversation_id").eq("id", a.data.id).eq("business_id", id).eq("sender", "ai").maybeSingle();
+    if (!m?.reply_to_message_id) return err("not_found", 404);
+    const [{ data: q }, { data: c }, { count }] = await Promise.all([
+      admin.from("sec_messages").select("body").eq("id", m.reply_to_message_id).maybeSingle(),
+      admin.from("sec_conversations").select("contact_kind").eq("id", m.conversation_id).maybeSingle(),
+      admin.from("sec_knowledge").select("id", { count: "exact", head: true }).eq("business_id", id)]);
+    if (!q?.body) return err("not_found", 404);
+    if ((count ?? 0) >= 100) return err("knowledge_limit_reached");
+    const kind = c?.contact_kind === "friend" || c?.contact_kind === "family" ? c.contact_kind : "faq";
+    await admin.from("sec_knowledge").insert({ business_id: id, kind, title: String(q.body).slice(0, 200), content: a.data.answer });
+    return json({ ok: true, kind });
   }
   if (action === "test") {
     const msg = z.string().trim().min(1).max(1000).safeParse(body?.message); if (!msg.success) return err("invalid_input");

@@ -146,12 +146,31 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
           className="mt-1 w-full rounded-2xl border border-sand bg-ivory p-3 text-sm font-normal" /></label>)}
       <PersonalTeach me={me} call={call} reload={reload} />
     </div>)}
+    {tab === "chats" && <Replies call={call} reload={reload} />}
     {tab === "chats" && (<div className="space-y-2">{chats.length === 0 && <p className="card p-6 text-center text-sage">ገና ቻት የለም።</p>}
       {chats.map((c) => <div key={c.id} className="card p-4"><p className="flex items-center gap-2 font-semibold">{c.name || "ደንበኛ"}{c.attention && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ትኩረት</span>}{!c.kind && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ያልተለየ</span>}</p><p className="truncate text-sm text-sage">{c.preview}</p>
         <div className="mt-3 flex flex-wrap gap-2">{([["customer", "💼 ደንበኛ"], ["friend", "🤝 ጓደኛ"], ["family", "👨‍👩‍👧 ቤተሰብ"], ["ignore", "🚫 ችላ"]] as const).map(([k, l]) =>
           <button key={k} onClick={async () => { const r = await call("classify", "POST", { id: c.id, kind: k }); if (r.ok) setChats((all) => all.map((x) => x.id === c.id ? { ...x, kind: k } : x)); }}
             className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${c.kind === k ? "border-forest bg-forest text-ivory" : "border-sand text-forest"}`}>{l}</button>)}</div></div>)}</div>)}
   </>);
+}
+
+function Replies({ call, reload }: Pick<P, "call" | "reload">) {
+  type R = { id: string; question: string; answer: string; kind: string | null };
+  const [rs, setRs] = useState<R[]>([]); const [open, setOpen] = useState<string | null>(null); const [fix, setFix] = useState(""); const [done, setDone] = useState<Record<string, boolean>>({});
+  useEffect(() => { call("replies").then((r) => r.ok && setRs(r.data.replies)); }, [call]);
+  if (!rs.length) return null;
+  return (<div className="card space-y-3 p-4">
+    <p className="text-sm font-semibold text-forest">🛠 የረዳቱ የቅርብ መልሶች</p>
+    <p className="text-xs text-sage">መልሱ ካልተመቸህ "አስተካክል" ን ጠቅ አድርገህ ትክክለኛውን ጻፍ፤ ረዳቱ ቀጣይ ጊዜ እንዲሁ ይመልሳል።</p>
+    {rs.map((r) => <div key={r.id} className="rounded-2xl border border-sand p-3 text-sm">
+      <p className="text-xs text-sage">ሲሉ፦ {r.question}</p><p className="mt-1">🤖 {r.answer}</p>
+      {done[r.id] ? <p className="mt-2 text-xs font-semibold text-forest">✅ ተምሯል</p> : open === r.id ? (
+        <form className="mt-2 space-y-2" onSubmit={async (e) => { e.preventDefault(); const x = await call("correct", "POST", { id: r.id, answer: fix }); if (x.ok) { setDone({ ...done, [r.id]: true }); setOpen(null); setFix(""); await reload(); } }}>
+          <textarea className="input min-h-16" required maxLength={1000} placeholder="ትክክለኛው መልስ…" value={fix} onChange={(e) => setFix(e.target.value)} />
+          <div className="flex gap-2"><button className="btn btn-gold flex-1">አስተምር</button><button type="button" className="btn flex-1" onClick={() => setOpen(null)}>ተው</button></div></form>
+      ) : <button className="mt-2 rounded-full border border-sand px-3 py-1 text-xs font-semibold text-forest" onClick={() => { setOpen(r.id); setFix(""); }}>✏️ አስተካክል</button>}</div>)}
+  </div>);
 }
 
 function PersonalTeach({ me, call, reload }: P) {
