@@ -92,6 +92,7 @@ export const ReplySchema = z.object({
   needs_human: z.boolean(),
   reason: z.string().max(300).optional().default(""),
   used_knowledge_ids: z.array(z.string()).default([]),
+  lead: z.object({ kind: z.enum(["order", "booking", "none"]).catch("none"), summary: z.string().max(300).optional().default("") }).optional().catch(undefined),
 });
 export type ModelReply = z.infer<typeof ReplySchema>;
 
@@ -166,9 +167,10 @@ STRICT RULES:
 - Never promise anything (delivery, refunds, availability) unless the knowledge states it.
 - Do not share links or numbers that are not in the knowledge.
 - Complaints, payments, legal, medical, or anything sensitive → needs_human=true.
+- If the customer clearly places an ORDER or asks to BOOK/reserve (an appointment, table, visit, delivery), set "lead": {"kind":"order"|"booking","summary":"short note: what, how many, when/where exactly as the customer said"} — never invent details; otherwise omit "lead" or use {"kind":"none"}. Still reply normally and politely confirm you noted it for the team.
 Owner's extra rules: ${o.rules || "(none)"}${style}
 Business hours: ${o.hours || "(not set)"}
-Respond ONLY with JSON: {"reply": string, "language": "am"|"en", "confidence": 0..1, "needs_human": boolean, "reason": string, "used_knowledge_ids": string[]}
+Respond ONLY with JSON: {"reply": string, "language": "am"|"en", "confidence": 0..1, "needs_human": boolean, "reason": string, "used_knowledge_ids": string[], "lead"?: {"kind":"order"|"booking"|"none","summary":string}}
 
 BUSINESS KNOWLEDGE:
 ${kb}`;

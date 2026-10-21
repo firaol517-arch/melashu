@@ -153,3 +153,13 @@ describe("owner-taught notes for personal chats", () => {
     expect(buildMessages({ ...base, relationship: "customer" })[0].content).not.toMatch(/ማታ እደውላለሁ/);
   });
 });
+
+describe("lead capture", () => {
+  it("keeps lead info from the model and tolerates a malformed lead", async () => {
+    const { ReplySchema } = await import("./ai-core.js");
+    const ok = ReplySchema.parse({ reply: "እሺ", language: "am", confidence: 0.9, needs_human: false, lead: { kind: "order", summary: "2 ቲሸርት ነገ" } });
+    expect(ok.lead?.kind).toBe("order");
+    const bad = ReplySchema.parse({ reply: "እሺ", language: "am", confidence: 0.9, needs_human: false, lead: "yes" });
+    expect(bad.lead).toBeUndefined();
+  });
+});

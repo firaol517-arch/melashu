@@ -82,6 +82,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
       .eq("business_id", id).order("last_message_at", { ascending: false, nullsFirst: false }).limit(25);
     return json({ chats: (data ?? []).map((c: any) => ({ id: c.id, name: c.sec_customers?.display_name ?? "", preview: c.last_message_preview, at: c.last_message_at, attention: c.needs_attention, reason: c.attention_reason, kind: c.contact_kind ?? null })) });
   }
+  if (action === "leads") {
+    const { data } = await admin.from("sec_followups").select("id,title,done,created_at,sec_customers(display_name)").eq("business_id", id).order("done").order("created_at", { ascending: false }).limit(30);
+    return json({ leads: (data ?? []).map((l: any) => ({ id: l.id, title: l.title, done: l.done, who: l.sec_customers?.display_name ?? "", at: l.created_at })) });
+  }
   if (action === "replies") {   // the assistant's latest replies, so the owner can correct them
     const { data: ai } = await admin.from("sec_messages").select("id,body,reply_to_message_id,conversation_id").eq("business_id", id).eq("sender", "ai").eq("status", "sent").order("created_at", { ascending: false }).limit(10);
     const qIds = (ai ?? []).map((m: any) => m.reply_to_message_id).filter(Boolean), cIds = [...new Set((ai ?? []).map((m: any) => m.conversation_id))];
@@ -117,6 +121,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
     if ((count ?? 0) >= 100) return err("knowledge_limit_reached");
     const { data } = await admin.from("sec_knowledge").insert({ ...p.data, business_id: id }).select("id,kind,title,content").single();
     return json({ item: data });
+  }
+  if (action === "lead_done") {
+    const a = z.object({ id: z.string().uuid(), done: z.boolean() }).safeParse(body); if (!a.success) return err("invalid_input");
+    await admin.from("sec_followups").update({ done: a.data.done }).eq("id", a.data.id).eq("business_id", id);
+    return json({ ok: true });
   }
   if (action === "correct") {   // owner fixes a reply → saved as a lesson for that kind of chat
     const a = z.object({ id: z.string().uuid(), answer: z.string().trim().min(1).max(1000) }).safeParse(body); if (!a.success) return err("invalid_input");

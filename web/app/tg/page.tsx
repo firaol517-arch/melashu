@@ -125,6 +125,7 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
       {([["home", "ቤት"], ["teach", "አስተምር"], ["chats", "ቻቶች"]] as const).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`flex-1 py-4 text-sm font-semibold ${tab === k ? "text-forest" : "text-sage"}`}>{l}</button>)}
     </nav>
     {tab === "home" && (<div className="space-y-3">
+      <Leads call={call} />
       <div className="card space-y-2 p-5">
         <p className="eyebrow">ሁኔታ</p>
         <p>ግንኙነት: <b className={connected ? "text-leaf" : "text-danger"}>{connected ? "ተገናኝቷል" : "አልተገናኘም"}</b></p>
@@ -153,6 +154,21 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
           <button key={k} onClick={async () => { const r = await call("classify", "POST", { id: c.id, kind: k }); if (r.ok) setChats((all) => all.map((x) => x.id === c.id ? { ...x, kind: k } : x)); }}
             className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${c.kind === k ? "border-forest bg-forest text-ivory" : "border-sand text-forest"}`}>{l}</button>)}</div></div>)}</div>)}
   </>);
+}
+
+function Leads({ call }: Pick<P, "call">) {
+  type L = { id: string; title: string; done: boolean; who: string };
+  const [ls, setLs] = useState<L[]>([]);
+  const load = useCallback(() => { call("leads").then((r) => r.ok && setLs(r.data.leads)); }, [call]);
+  useEffect(() => { load(); }, [load]);
+  const open = ls.filter((l) => !l.done);
+  if (!ls.length) return null;
+  return (<div className="card space-y-2 p-4">
+    <p className="text-sm font-semibold text-forest">📋 ትዕዛዝ እና ቀጠሮዎች {open.length > 0 && <span className="ml-1 rounded-full bg-gold-soft px-2 py-0.5 text-xs">{open.length} አዲስ</span>}</p>
+    {ls.map((l) => <label key={l.id} className="flex items-start gap-3 rounded-2xl border border-sand p-3 text-sm">
+      <input type="checkbox" checked={l.done} onChange={async (e) => { setLs((all) => all.map((x) => x.id === l.id ? { ...x, done: e.target.checked } : x)); await call("lead_done", "POST", { id: l.id, done: e.target.checked }); }} className="mt-1" />
+      <span className={l.done ? "text-sage line-through" : ""}>{l.title}{l.who && <span className="block text-xs text-sage">{l.who}</span>}</span></label>)}
+  </div>);
 }
 
 function Replies({ call, reload }: Pick<P, "call" | "reload">) {

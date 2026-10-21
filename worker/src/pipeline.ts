@@ -196,6 +196,13 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     await db.from("sec_messages").update({ status: "sent", tg_message_id: r.tgMessageId, sent_at: new Date().toISOString() }).eq("id", out.id);
     await db.from("sec_conversations").update({ unread_count: 0, last_message_at: new Date().toISOString(), last_message_preview: decision.reply.slice(0, 80) }).eq("id", conv.id);
     await audit(m.businessId, "ai.reply_sent");
+    const lead = (decision as any).meta?.lead;                       // customer placed an order / asked to book → save for the owner and tell them right away
+    if (lead && lead.kind !== "none" && String(lead.summary ?? "").trim() && relationship === "customer") {
+      const label = lead.kind === "order" ? "🛒 ትዕዛዝ" : "📅 ቀጠሮ";
+      await db.from("sec_followups").insert({ business_id: m.businessId, customer_id: customer.id, title: `${label}: ${String(lead.summary).trim()}`.slice(0, 200) });
+      await audit(m.businessId, "lead.captured", { kind: lead.kind });
+      void hooks.notify(m.businessId, `${label} ከ ${m.name}፦\n${String(lead.summary).trim().slice(0, 300)}\n\n(አፑን ክፈት → ዝርዝር)`).catch(() => {});
+    }
   } catch (err: any) {
     await db.from("sec_messages").update({ status: "failed", error: String(err?.errorMessage ?? err?.message ?? "send_failed").slice(0, 200) }).eq("id", out.id);
     await db.from("sec_conversations").update({ needs_attention: true, attention_reason: "send_failed" }).eq("id", conv.id);
