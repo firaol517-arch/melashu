@@ -81,7 +81,10 @@ async function process_(m: Incoming, send: Sender, typing: Typing) {
     inserted = data;
     await db.from("sec_conversations").update({ unread_count: (conv.unread_count ?? 0) + 1, last_message_at: new Date().toISOString(),
       last_message_preview: (m.text || "[non-text message]").slice(0, 80) }).eq("id", conv.id);
-    if (!m.text) { await db.from("sec_conversations").update({ needs_attention: true, attention_reason: "non_text_message" }).eq("id", conv.id); return; }
+    if (!m.text) {                                                                       // photo / voice / sticker: the AI cannot read it
+      if (conv.contact_kind === "friend" || conv.contact_kind === "family") return;       // friends send these all the time — stay quiet, no alert
+      await db.from("sec_conversations").update({ needs_attention: true, attention_reason: "non_text_message" }).eq("id", conv.id); return;
+    }
   }
 
   // 3) Eligibility (default-deny)
