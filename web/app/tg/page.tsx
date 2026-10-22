@@ -57,9 +57,10 @@ function Wizard({ me, step, setStep, call, reload, busy, setBusy }: P & { step: 
   const [f, setF] = useState({ name: me.business.name.endsWith("'s business") || me.business.name === "My business" ? "" : me.business.name, business_type: me.business.business_type, hours: me.business.hours, location: "", tone: me.business.tone });
   const [msg, setMsg] = useState("");
   const [ok, setOk] = useState({ disclosure: false, reviewed: false, can_pause: false });
+  const [testedNow, setTestedNow] = useState(false);
   const titles = ["ስለ ንግድህ", "አስተምረኝ", "ሞክረኝ", "ስምምነት", "አገናኝ"];
   const tryStep = async (fn: () => Promise<{ ok: boolean; data: any }>, next: number) => { setBusy(true); setMsg(""); const r = await fn(); setBusy(false);
-    if (!r.ok) { setMsg(({ add_at_least_3_knowledge_items: "ቢያንስ 3 መረጃ ጨምር።", run_at_least_one_test: "መጀመሪያ አንድ ሙከራ አድርግ።", invalid_input: "መረጃውን በትክክል ሙላ።" } as any)[r.data?.error] ?? "ስህተት ተፈጥሯል"); return; }
+    if (!r.ok) { setMsg(({ add_at_least_3_knowledge_items: "ቢያንስ 3 መረጃ ጨምር።", run_at_least_one_test: "መጀመሪያ አንድ ሙከራ አድርግ።", invalid_input: "መረጃውን በትክክል ሙላ።" } as any)[r.data?.error] ?? `ስህተት ተፈጥሯል (${r.data?.error ?? "network"})። እንደገና ሞክር።`); return; }
     await reload(); setStep(next); };
   return (
     <>
@@ -80,8 +81,9 @@ function Wizard({ me, step, setStep, call, reload, busy, setBusy }: P & { step: 
         <KnowledgeEditor me={me} call={call} reload={reload} />
         {msg && <p className="text-sm text-danger">{msg}</p>}
         <button className="btn btn-primary w-full" disabled={busy || me.knowledge.length < 3} onClick={() => setStep(2)}>ቀጥል</button></div>)}
-      {step === 2 && (<div className="space-y-3"><TestBox call={call} reload={reload} />
-        <button className="btn btn-primary w-full" disabled={!me.tested} onClick={() => setStep(3)}>ቀጥል</button></div>)}
+      {step === 2 && (<div className="space-y-3"><TestBox call={call} reload={reload} onTested={() => setTestedNow(true)} />
+        <p className="text-xs text-sage">አንድ ጥያቄ ሞክረህ መልስ ሲመጣ "ቀጥል" ይበራል። ረዳቱ "አያውቅም" ካለ ችግር የለም፤ ጥያቄው ከጻፍከው መረጃ ውጭ ነው ማለት ነው።</p>
+        <button className="btn btn-primary w-full" disabled={!me.tested && !testedNow} onClick={() => setStep(3)}>ቀጥል</button></div>)}
       {step === 3 && (
         <div className="card space-y-3 p-5">
           <p className="font-display text-xl">ከመጀመራችን በፊት ተስማማ</p>
@@ -218,11 +220,11 @@ function KnowledgeEditor({ me, call, reload }: P) {
       <button className="btn btn-gold w-full" disabled={busy}>+ ጨምር</button></form></div>);
 }
 
-function TestBox({ call, reload }: Pick<P, "call" | "reload">) {
+function TestBox({ call, reload, onTested }: Pick<P, "call" | "reload"> & { onTested?: () => void }) {
   const [q, setQ] = useState(""); const [out, setOut] = useState<string>(""); const [busy, setBusy] = useState(false);
   return (<div className="card space-y-2 p-4"><p className="eyebrow">ሞክረኝ (አይላክም)</p>
     <div className="flex gap-2"><input className="input" placeholder="እንደ ደንበኛ ጻፍ፦ ዋጋው ስንት ነው?" value={q} onChange={(e) => setQ(e.target.value)} />
       <button className="btn btn-primary" disabled={busy || !q.trim()} onClick={async () => { setBusy(true); setOut(""); const r = await call("test", "POST", { message: q }); setBusy(false);
-        const d = r.data?.decision; setOut(!r.ok ? (r.data?.error ?? "ስህተት") : d?.action === "send" ? d.reply : `አያውቅም — ወደ አንተ ያስተላልፋል (${d?.reason})`); reload(); }}>ሞክር</button></div>
+        if (r.ok) onTested?.(); const d = r.data?.decision; setOut(!r.ok ? (r.data?.error ?? "ስህተት") : d?.action === "send" ? d.reply : `አያውቅም — ወደ አንተ ያስተላልፋል (${d?.reason})`); reload(); }}>ሞክር</button></div>
     {out && <p className="rounded-2xl bg-cream p-3 text-sm">{out}</p>}</div>);
 }
