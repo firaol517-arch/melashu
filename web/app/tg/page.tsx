@@ -225,6 +225,6 @@ function TestBox({ call, reload, onTested }: Pick<P, "call" | "reload"> & { onTe
   return (<div className="card space-y-2 p-4"><p className="eyebrow">ሞክረኝ (አይላክም)</p>
     <div className="flex gap-2"><input className="input" placeholder="እንደ ደንበኛ ጻፍ፦ ዋጋው ስንት ነው?" value={q} onChange={(e) => setQ(e.target.value)} />
       <button className="btn btn-primary" disabled={busy || !q.trim()} onClick={async () => { setBusy(true); setOut(""); const r = await call("test", "POST", { message: q }); setBusy(false);
-        if (r.ok) onTested?.(); const d = r.data?.decision; setOut(!r.ok ? (r.data?.error ?? "ስህተት") : d?.action === "send" ? d.reply : `አያውቅም — ወደ አንተ ያስተላልፋል (${d?.reason})`); reload(); }}>ሞክር</button></div>
+        if (r.ok) onTested?.(); const d = r.data?.decision; setOut(!r.ok ? (r.data?.error ?? "ስህተት") : d?.action === "send" ? d.reply : d?.reason === "ai_provider_error" || d?.reason === "ai_empty_response" ? "AI ለጊዜው አልመለሰም (ጭነት ወይም quota)። እንደገና ሞክር፤ ወይም ቀጥል ተጫን — ሙከራው ተቆጥሯል።" : `አያውቅም — ወደ አንተ ያስተላልፋል (${d?.reason})`); reload(); }}>ሞክር</button></div>
     {out && <p className="rounded-2xl bg-cream p-3 text-sm">{out}</p>}</div>);
 }

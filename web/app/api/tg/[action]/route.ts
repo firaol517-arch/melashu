@@ -10,6 +10,7 @@ import { aiConfig } from "@/lib/ai-config";
 import { generateDecision, retrieveKnowledge } from "@/lib/ai-core";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 45;   // the onboarding "test" calls an AI model; the default 10s limit cut it off when the model was slow
 const json = (b: unknown, status = 200) => NextResponse.json(b, { status });
 const err = (e: string, status = 400) => json({ error: e }, status);
 
@@ -149,8 +150,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
       admin.from("sec_knowledge").select("id,kind,title,content").eq("business_id", id).eq("active", true).limit(300),
     ]);
     const knowledge = retrieveKnowledge(msg.data, (kb ?? []).filter((k) => k.kind !== "friend" && k.kind !== "family"));
-    const decision = await generateDecision(new OpenAI({ apiKey, baseURL }) as any, { businessName: s.biz.name, businessType: s.biz.business_type, tone: s.biz.tone,
-      rules: st?.response_rules ?? "", hours: (s.biz.business_hours as any)?.text ?? "", languageMode: st?.language_mode ?? "match", knowledge, history: [], incoming: msg.data, model: model || st?.ai_model || "gpt-4o-mini", jsonMode });
+    const args = { businessName: s.biz.name, businessType: s.biz.business_type, tone: s.biz.tone,
+      rules: st?.response_rules ?? "", hours: (s.biz.business_hours as any)?.text ?? "", languageMode: st?.language_mode ?? "match", knowledge, history: [] as any[], incoming: msg.data };
+    let decision = await generateDecision(new OpenAI({ apiKey, baseURL, timeout: 12_000, maxRetries: 0 }) as any, { ...args, model: model || st?.ai_model || "gpt-4o-mini", jsonMode });
+    const fbKey = process.env.AI_FALLBACK_API_KEY, fbModel = process.env.AI_FALLBACK_MODEL;
+    if (decision.action === "flag" && decision.reason === "ai_provider_error" && fbKey && fbModel)       // same failover as the worker
+      decision = await generateDecision(new OpenAI({ apiKey: fbKey, baseURL: process.env.AI_FALLBACK_BASE_URL || undefined, timeout: 12_000, maxRetries: 0 }) as any, { ...args, model: fbModel, jsonMode: !process.env.AI_FALLBACK_BASE_URL });
     await log(id, "ai.test", { action: decision.action });
     return json({ decision });
   }
