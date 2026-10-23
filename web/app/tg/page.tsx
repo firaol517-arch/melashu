@@ -12,7 +12,7 @@ const tg = () => (typeof window !== "undefined" ? (window as any).Telegram?.WebA
 
 export default function MiniApp() {
   const token = useRef<string>(""); const [me, setMe] = useState<Me | null>(null); const [error, setError] = useState(""); const [step, setStep] = useState(0);
-  const [tab, setTab] = useState<"home" | "teach" | "chats" | "profile">("home"); const [busy, setBusy] = useState(false);
+  const [editProfile, setEditProfile] = useState(false); const [tab, setTab] = useState<"home" | "teach" | "chats" | "profile">("home"); const [busy, setBusy] = useState(false);
 
   const call = useCallback(async (path: string, method = "GET", body?: unknown) => {
     const r = await fetch(`/api/tg/${path}`, { method, headers: { "content-type": "application/json", authorization: `Bearer ${token.current}` }, body: body ? JSON.stringify(body) : undefined });
@@ -40,10 +40,13 @@ export default function MiniApp() {
     <Shell>
       <header className="flex items-center justify-between px-1 pb-4">
         <div><p className="eyebrow">AI ጸሐፊ</p><h1 className="font-display text-2xl">{me.business.name}</h1></div>
-        {done && <span className={`rounded-full px-3 py-1 text-xs font-semibold ${connected && me.settings?.automation_enabled ? "bg-leaf/15 text-leaf" : "bg-sand text-sage"}`}>{connected ? (me.settings?.automation_enabled ? "● በርቷል" : "⏸ ቆሟል") : "ያልተገናኘ"}</span>}
+        <div className="flex items-center gap-2"><button onClick={() => setEditProfile((v) => !v)} className="rounded-full border border-sand px-3 py-1 text-xs font-semibold text-forest">{editProfile ? "✕ ዝጋ" : "✏️ መገለጫ"}</button>
+        {done && <span className={`rounded-full px-3 py-1 text-xs font-semibold ${connected && me.settings?.automation_enabled ? "bg-leaf/15 text-leaf" : "bg-sand text-sage"}`}>{connected ? (me.settings?.automation_enabled ? "● በርቷል" : "⏸ ቆሟል") : "ያልተገናኘ"}</span>}</div>
       </header>
-      {!done ? <Wizard me={me} step={step} setStep={setStep} call={call} reload={load} busy={busy} setBusy={setBusy} />
+      {editProfile ? <ProfileEditor me={me} call={call} reload={load} />
+        : !done ? <Wizard me={me} step={step} setStep={setStep} call={call} reload={load} busy={busy} setBusy={setBusy} />
         : <Dashboard me={me} tab={tab} setTab={setTab} call={call} reload={load} />}
+      <p className="pt-4 text-center text-[10px] text-sage">ስሪት 10.23-b</p>
     </Shell>
   );
 }
