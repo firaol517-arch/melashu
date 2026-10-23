@@ -12,7 +12,7 @@ const tg = () => (typeof window !== "undefined" ? (window as any).Telegram?.WebA
 
 export default function MiniApp() {
   const token = useRef<string>(""); const [me, setMe] = useState<Me | null>(null); const [error, setError] = useState(""); const [step, setStep] = useState(0);
-  const [tab, setTab] = useState<"home" | "teach" | "chats">("home"); const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<"home" | "teach" | "chats" | "profile">("home"); const [busy, setBusy] = useState(false);
 
   const call = useCallback(async (path: string, method = "GET", body?: unknown) => {
     const r = await fetch(`/api/tg/${path}`, { method, headers: { "content-type": "application/json", authorization: `Bearer ${token.current}` }, body: body ? JSON.stringify(body) : undefined });
@@ -116,7 +116,7 @@ function ConnectCard({ me, reload }: { me: Me; reload: () => Promise<Me> }) {
     </div>);
 }
 
-function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach" | "chats"; setTab: (t: "home" | "teach" | "chats") => void }) {
+function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach" | "chats" | "profile"; setTab: (t: "home" | "teach" | "chats" | "profile") => void }) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [st, setSt] = useState<{ customers: number; unclassified: number; attention: number; replies24: number; incoming24: number } | null>(null);
   useEffect(() => { if (tab === "home") call("stats").then((r) => r.ok && setSt(r.data)); }, [tab, call, me]);
@@ -124,7 +124,7 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
   const connected = me.connection?.status === "connected"; const on = !!me.settings?.automation_enabled;
   return (<>
     <nav className="fixed inset-x-0 bottom-0 z-10 mx-auto flex max-w-md border-t border-line bg-ivory">
-      {([["home", "ቤት"], ["teach", "አስተምር"], ["chats", "ቻቶች"]] as const).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`flex-1 py-4 text-sm font-semibold ${tab === k ? "text-forest" : "text-sage"}`}>{l}</button>)}
+      {([["home", "ቤት"], ["teach", "አስተምር"], ["chats", "ቻቶች"], ["profile", "መገለጫ"]] as const).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`flex-1 py-4 text-sm font-semibold ${tab === k ? "text-forest" : "text-sage"}`}>{l}</button>)}
     </nav>
     {tab === "home" && (<div className="space-y-3">
       <Leads call={call} />
@@ -150,12 +150,30 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
       <PersonalTeach me={me} call={call} reload={reload} />
     </div>)}
     {tab === "chats" && <Replies call={call} reload={reload} />}
+    {tab === "profile" && <ProfileEditor me={me} call={call} reload={reload} />}
     {tab === "chats" && (<div className="space-y-2">{chats.length === 0 && <p className="card p-6 text-center text-sage">ገና ቻት የለም።</p>}
       {chats.map((c) => <div key={c.id} className="card p-4"><p className="flex items-center gap-2 font-semibold">{c.name || "ደንበኛ"}{c.attention && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ትኩረት</span>}{!c.kind && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ያልተለየ</span>}</p><p className="truncate text-sm text-sage">{c.preview}</p>
         <div className="mt-3 flex flex-wrap gap-2">{([["customer", "💼 ደንበኛ"], ["friend", "🤝 ጓደኛ"], ["family", "👨‍👩‍👧 ቤተሰብ"], ["ignore", "🚫 ችላ"]] as const).map(([k, l]) =>
           <button key={k} onClick={async () => { const r = await call("classify", "POST", { id: c.id, kind: k }); if (r.ok) setChats((all) => all.map((x) => x.id === c.id ? { ...x, kind: k } : x)); }}
             className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${c.kind === k ? "border-forest bg-forest text-ivory" : "border-sand text-forest"}`}>{l}</button>)}</div></div>)}</div>)}
   </>);
+}
+
+function ProfileEditor({ me, call, reload }: P) {
+  const [f, setF] = useState({ name: me.business.name === "My business" ? "" : me.business.name, business_type: me.business.business_type ?? "", hours: me.business.hours ?? "",
+    location: me.knowledge.find((k) => k.title === "Location")?.content ?? "", tone: me.business.tone ?? "" });
+  const [busy, setBusy] = useState(false); const [saved, setSaved] = useState(""); const set = (k: keyof typeof f, v: string) => { setF({ ...f, [k]: v }); setSaved(""); };
+  return (<form className="card space-y-3 p-5" onSubmit={async (e) => { e.preventDefault(); setBusy(true); const r = await call("business", "POST", { ...f, languages: me.business.languages?.length ? me.business.languages : ["am", "en"] }); setBusy(false);
+      if (r.ok) { setSaved("✅ ተቀምጧል"); await reload(); } else setSaved("ስህተት ተፈጥሯል፤ እንደገና ሞክር።"); }}>
+    <p className="font-display text-xl">የንግድህ መገለጫ</p>
+    <p className="text-xs text-sage">እዚህ የምትቀይረው ረዳቱ ደንበኞችን ሲመልስ ወዲያው ይጠቀማል።</p>
+    <label className="block text-sm font-semibold text-forest">የንግዱ ስም<input className="input mt-1 font-normal" required maxLength={120} value={f.name} onChange={(e) => set("name", e.target.value)} /></label>
+    <label className="block text-sm font-semibold text-forest">የንግድ አይነት<input className="input mt-1 font-normal" maxLength={120} placeholder="ለምሳሌ፦ ኤሌክትሮኒክስ ሱቅ" value={f.business_type} onChange={(e) => set("business_type", e.target.value)} /></label>
+    <label className="block text-sm font-semibold text-forest">የስራ ሰዓት<input className="input mt-1 font-normal" maxLength={300} placeholder="ሰኞ–ቅዳሜ 2:00–12:00" value={f.hours} onChange={(e) => set("hours", e.target.value)} /></label>
+    <label className="block text-sm font-semibold text-forest">አድራሻ<input className="input mt-1 font-normal" maxLength={300} placeholder="ቦሌ መድኃኔዓለም" value={f.location} onChange={(e) => set("location", e.target.value)} /></label>
+    <label className="block text-sm font-semibold text-forest">የአነጋገር ቃና<input className="input mt-1 font-normal" maxLength={300} placeholder="ለምሳሌ፦ ትህትና ያለው፣ አጭር" value={f.tone} onChange={(e) => set("tone", e.target.value)} /></label>
+    {saved && <p className="text-sm font-semibold text-forest">{saved}</p>}
+    <button className="btn btn-primary w-full" disabled={busy}>አስቀምጥ</button></form>);
 }
 
 function Leads({ call }: Pick<P, "call">) {
