@@ -163,7 +163,7 @@ function ProfileEditor({ me, call, reload }: P) {
   const [f, setF] = useState({ name: me.business.name === "My business" ? "" : me.business.name, business_type: me.business.business_type ?? "", hours: me.business.hours ?? "",
     location: me.knowledge.find((k) => k.title === "Location")?.content ?? "", tone: me.business.tone ?? "" });
   const [busy, setBusy] = useState(false); const [saved, setSaved] = useState(""); const set = (k: keyof typeof f, v: string) => { setF({ ...f, [k]: v }); setSaved(""); };
-  return (<form className="card space-y-3 p-5" onSubmit={async (e) => { e.preventDefault(); setBusy(true); const r = await call("business", "POST", { ...f, languages: me.business.languages?.length ? me.business.languages : ["am", "en"] }); setBusy(false);
+  return (<form className="card space-y-3 p-5" onSubmit={async (e) => { e.preventDefault(); setBusy(true); const r = await call("business", "POST", { ...f, tone: f.tone.trim().length >= 2 ? f.tone : "friendly, polite, concise", languages: me.business.languages?.length ? me.business.languages : ["am", "en"] }); setBusy(false);
       if (r.ok) { setSaved("✅ ተቀምጧል"); await reload(); } else setSaved("ስህተት ተፈጥሯል፤ እንደገና ሞክር።"); }}>
     <p className="font-display text-xl">የንግድህ መገለጫ</p>
     <p className="text-xs text-sage">እዚህ የምትቀይረው ረዳቱ ደንበኞችን ሲመልስ ወዲያው ይጠቀማል።</p>
