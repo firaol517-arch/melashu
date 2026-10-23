@@ -93,10 +93,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
       bizIds.length ? admin.from("sec_telegram_connections").select("business_id,status").in("business_id", bizIds) : Promise.resolve({ data: [] as any[] }),
       bizIds.length ? admin.from("sec_settings").select("business_id,automation_enabled").in("business_id", bizIds) : Promise.resolve({ data: [] as any[] })]);
     const since = new Date(Date.now() - 7 * 86400_000).toISOString();
-    const counts = await Promise.all(bizIds.map(async (b: string) => [b, (await admin.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", b).eq("sender", "ai").eq("status", "sent").gte("created_at", since)).count ?? 0] as const));
-    const bm = new Map((biz ?? []).map((b: any) => [b.id, b])), cm = new Map((conns ?? []).map((c: any) => [c.business_id, c.status])), sm = new Map((sets ?? []).map((x: any) => [x.business_id, x.automation_enabled])), nm = new Map(counts);
+    const stats = new Map<string, any>(await Promise.all(bizIds.map(async (b: string) => {
+      const c = async (q: any) => (await q).count ?? 0;
+      const [inc, sent, flagged, errors, cust, fr, fam] = await Promise.all([
+        c(admin.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", b).eq("direction", "in").gte("created_at", since)),
+        c(admin.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", b).eq("sender", "ai").eq("status", "sent").gte("created_at", since)),
+        c(admin.from("sec_activity_logs").select("id", { count: "exact", head: true }).eq("business_id", b).eq("event", "ai.flagged").gte("created_at", since)),
+        c(admin.from("sec_activity_logs").select("id", { count: "exact", head: true }).eq("business_id", b).eq("event", "ai.error").gte("created_at", since)),
+        c(admin.from("sec_conversations").select("id", { count: "exact", head: true }).eq("business_id", b).eq("contact_kind", "customer").gte("last_message_at", since)),
+        c(admin.from("sec_conversations").select("id", { count: "exact", head: true }).eq("business_id", b).eq("contact_kind", "friend").gte("last_message_at", since)),
+        c(admin.from("sec_conversations").select("id", { count: "exact", head: true }).eq("business_id", b).eq("contact_kind", "family").gte("last_message_at", since))]);
+      return [b, { inc, sent, flagged, errors, cust, fr, fam }] as const;
+    })));
+    const bm = new Map((biz ?? []).map((b: any) => [b.id, b])), cm = new Map((conns ?? []).map((c: any) => [c.business_id, c.status])), sm = new Map((sets ?? []).map((x: any) => [x.business_id, x.automation_enabled]));
     return json({ users: (owners ?? []).map((o: any) => ({ tg: String(o.tg_user_id), name: o.first_name ?? "", username: o.username ?? "", business: bm.get(o.business_id)?.name ?? "", type: bm.get(o.business_id)?.business_type ?? "",
-      agreed: !!o.agreed_at, approved: !!o.approved, connection: cm.get(o.business_id) ?? "—", on: !!sm.get(o.business_id), replies7d: nm.get(o.business_id) ?? 0, at: o.created_at })) });
+      agreed: !!o.agreed_at, approved: !!o.approved, connection: cm.get(o.business_id) ?? "—", on: !!sm.get(o.business_id), stats: stats.get(o.business_id) ?? null, at: o.created_at })) });
   }
   if (action === "leads") {
     const { data } = await admin.from("sec_followups").select("id,title,done,created_at,sec_customers(display_name)").eq("business_id", id).order("done").order("created_at", { ascending: false }).limit(30);

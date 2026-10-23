@@ -165,7 +165,7 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
 }
 
 function AdminUsers({ call }: Pick<P, "call">) {
-  type U = { tg: string; name: string; username: string; business: string; type: string; agreed: boolean; approved: boolean; connection: string; on: boolean; replies7d: number; at: string };
+  type U = { tg: string; name: string; username: string; business: string; type: string; agreed: boolean; approved: boolean; connection: string; on: boolean; stats: { inc: number; sent: number; flagged: number; errors: number; cust: number; fr: number; fam: number } | null; at: string };
   const [us, setUs] = useState<U[]>([]); const [err, setErr] = useState("");
   const load = useCallback(() => { call("admin_users").then((r) => r.ok ? setUs(r.data.users) : setErr("መዳረሻ የለህም")); }, [call]);
   useEffect(() => { load(); }, [load]);
@@ -173,7 +173,8 @@ function AdminUsers({ call }: Pick<P, "call">) {
   return (<div className="space-y-2"><p className="text-xs text-sage">የተመዘገቡ ሰዎች መረጃ (የንግድ መረጃ ብቻ፤ የቻት ይዘት አይታይም)።</p>
     {us.map((u) => <div key={u.tg} className="card space-y-1 p-4 text-sm">
       <p className="font-semibold">{u.business || "(ንግድ ገና አልተሞላም)"} <span className="font-normal text-sage">· {u.name}{u.username ? ` @${u.username}` : ""}</span></p>
-      <p className="text-xs text-sage">{u.type || "—"} · ተመዝግቧል {new Date(u.at).toLocaleDateString()} · ስምምነት {u.agreed ? "✅" : "—"} · ግንኙነት {u.connection} · ረዳት {u.on ? "በርቷል" : "ቆሟል"} · የ7 ቀን መልሶች {u.replies7d}</p>
+      <p className="text-xs text-sage">{u.type || "—"} · ተመዝግቧል {new Date(u.at).toLocaleDateString()} · ስምምነት {u.agreed ? "✅" : "—"} · ግንኙነት {u.connection} · ረዳት {u.on ? "በርቷል" : "ቆሟል"} </p>
+      {u.stats && <p className="text-xs">📊 ባለፉት 7 ቀን፦ የገቡ {u.stats.inc} · የተመለሱ {u.stats.sent} · ማስጠንቀቂያ {u.stats.flagged}{u.stats.errors ? ` · ⚠️ ስህተት ${u.stats.errors}` : ""} · ቻቶች፦ ደንበኛ {u.stats.cust} / ጓደኛ {u.stats.fr} / ቤተሰብ {u.stats.fam}</p>}
       <button className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${u.approved ? "border-sand text-forest" : "border-forest bg-forest text-ivory"}`}
         onClick={async () => { await call("admin_set", "POST", { tg: u.tg, approved: !u.approved }); load(); }}>{u.approved ? "⏸ አቁም / ፈቃድ ሰርዝ" : "✅ ፍቀድ"}</button></div>)}
   </div>);
