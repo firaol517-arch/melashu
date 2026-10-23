@@ -5,14 +5,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type KB = { id: string; kind: string; title: string; content: string };
 type Me = { business: { name: string; business_type: string; tone: string; languages: string[]; hours: string };
   settings: { automation_enabled: boolean; dry_run: boolean; emergency_stop: boolean; reply_to_friends?: boolean; reply_to_family?: boolean; learn_style?: boolean; tone_friend?: string; tone_family?: string } | null; connection: { status: string } | null;
-  knowledge: KB[]; personal?: KB[]; agreed: boolean; tested: boolean; botUsername: string; workerOnline: boolean };
+  knowledge: KB[]; personal?: KB[]; approved?: boolean; isAdmin?: boolean; agreed: boolean; tested: boolean; botUsername: string; workerOnline: boolean };
 type Chat = { id: string; name: string; preview: string | null; at: string | null; attention: boolean; reason: string | null; kind: "customer" | "friend" | "family" | "ignore" | null };
 
 const tg = () => (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
 
 export default function MiniApp() {
   const token = useRef<string>(""); const [me, setMe] = useState<Me | null>(null); const [error, setError] = useState(""); const [step, setStep] = useState(0);
-  const [editProfile, setEditProfile] = useState(false); const [tab, setTab] = useState<"home" | "teach" | "chats" | "profile">("home"); const [busy, setBusy] = useState(false);
+  const [editProfile, setEditProfile] = useState(false); const [tab, setTab] = useState<"home" | "teach" | "chats" | "profile" | "users">("home"); const [busy, setBusy] = useState(false);
 
   const call = useCallback(async (path: string, method = "GET", body?: unknown) => {
     const r = await fetch(`/api/tg/${path}`, { method, headers: { "content-type": "application/json", authorization: `Bearer ${token.current}` }, body: body ? JSON.stringify(body) : undefined });
@@ -119,7 +119,7 @@ function ConnectCard({ me, reload }: { me: Me; reload: () => Promise<Me> }) {
     </div>);
 }
 
-function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach" | "chats" | "profile"; setTab: (t: "home" | "teach" | "chats" | "profile") => void }) {
+function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach" | "chats" | "profile" | "users"; setTab: (t: "home" | "teach" | "chats" | "profile" | "users") => void }) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [st, setSt] = useState<{ customers: number; unclassified: number; attention: number; replies24: number; incoming24: number } | null>(null);
   useEffect(() => { if (tab === "home") call("stats").then((r) => r.ok && setSt(r.data)); }, [tab, call, me]);
@@ -127,8 +127,9 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
   const connected = me.connection?.status === "connected"; const on = !!me.settings?.automation_enabled;
   return (<>
     <nav className="fixed inset-x-0 bottom-0 z-10 mx-auto flex max-w-md border-t border-line bg-ivory">
-      {([["home", "ቤት"], ["teach", "አስተምር"], ["chats", "ቻቶች"], ["profile", "መገለጫ"]] as const).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`flex-1 py-4 text-sm font-semibold ${tab === k ? "text-forest" : "text-sage"}`}>{l}</button>)}
+      {([["home", "ቤት"], ["teach", "አስተምር"], ["chats", "ቻቶች"], ["profile", "መገለጫ"], ...(me.isAdmin ? [["users", "ተጠቃሚዎች"] as const] : [])] as const).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`flex-1 py-4 text-sm font-semibold ${tab === k ? "text-forest" : "text-sage"}`}>{l}</button>)}
     </nav>
+    {me.approved === false && <p className="card p-4 text-sm font-semibold text-forest">⏳ ስምምነትህ ተመዝግቧል። ረዳቱ እንዲበራ የአስተዳዳሪ ፈቃድ እየተጠበቀ ነው፤ ሲፈቀድ ራሱ ይበራል።</p>}
     {tab === "home" && (<div className="space-y-3">
       <Leads call={call} />
       <div className="card space-y-2 p-5">
@@ -153,6 +154,7 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
       <PersonalTeach me={me} call={call} reload={reload} />
     </div>)}
     {tab === "chats" && <Replies call={call} reload={reload} />}
+    {tab === "users" && <AdminUsers call={call} />}
     {tab === "profile" && <ProfileEditor me={me} call={call} reload={reload} />}
     {tab === "chats" && (<div className="space-y-2">{chats.length === 0 && <p className="card p-6 text-center text-sage">ገና ቻት የለም።</p>}
       {chats.map((c) => <div key={c.id} className="card p-4"><p className="flex items-center gap-2 font-semibold">{c.name || "ደንበኛ"}{c.attention && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ትኩረት</span>}{!c.kind && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs">ያልተለየ</span>}</p><p className="truncate text-sm text-sage">{c.preview}</p>
@@ -160,6 +162,21 @@ function Dashboard({ me, tab, setTab, call, reload }: P & { tab: "home" | "teach
           <button key={k} onClick={async () => { const r = await call("classify", "POST", { id: c.id, kind: k }); if (r.ok) setChats((all) => all.map((x) => x.id === c.id ? { ...x, kind: k } : x)); }}
             className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${c.kind === k ? "border-forest bg-forest text-ivory" : "border-sand text-forest"}`}>{l}</button>)}</div></div>)}</div>)}
   </>);
+}
+
+function AdminUsers({ call }: Pick<P, "call">) {
+  type U = { tg: string; name: string; username: string; business: string; type: string; agreed: boolean; approved: boolean; connection: string; on: boolean; replies7d: number; at: string };
+  const [us, setUs] = useState<U[]>([]); const [err, setErr] = useState("");
+  const load = useCallback(() => { call("admin_users").then((r) => r.ok ? setUs(r.data.users) : setErr("መዳረሻ የለህም")); }, [call]);
+  useEffect(() => { load(); }, [load]);
+  if (err) return <p className="card p-4 text-sm">{err}</p>;
+  return (<div className="space-y-2"><p className="text-xs text-sage">የተመዘገቡ ሰዎች መረጃ (የንግድ መረጃ ብቻ፤ የቻት ይዘት አይታይም)።</p>
+    {us.map((u) => <div key={u.tg} className="card space-y-1 p-4 text-sm">
+      <p className="font-semibold">{u.business || "(ንግድ ገና አልተሞላም)"} <span className="font-normal text-sage">· {u.name}{u.username ? ` @${u.username}` : ""}</span></p>
+      <p className="text-xs text-sage">{u.type || "—"} · ተመዝግቧል {new Date(u.at).toLocaleDateString()} · ስምምነት {u.agreed ? "✅" : "—"} · ግንኙነት {u.connection} · ረዳት {u.on ? "በርቷል" : "ቆሟል"} · የ7 ቀን መልሶች {u.replies7d}</p>
+      <button className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${u.approved ? "border-sand text-forest" : "border-forest bg-forest text-ivory"}`}
+        onClick={async () => { await call("admin_set", "POST", { tg: u.tg, approved: !u.approved }); load(); }}>{u.approved ? "⏸ አቁም / ፈቃድ ሰርዝ" : "✅ ፍቀድ"}</button></div>)}
+  </div>);
 }
 
 function ProfileEditor({ me, call, reload }: P) {

@@ -21,6 +21,7 @@ async function session(req: Request) {
   const { data } = await supabaseAdmin().from("sec_businesses").select("*").eq("id", s.biz).eq("tg_owner_id", s.tg).maybeSingle();
   return data ? { tg: s.tg, biz: data } : null;
 }
+const isAdmin = (tg: number | string) => (process.env.ADMIN_TG_IDS ?? "").split(",").map((x) => x.trim()).filter(Boolean).includes(String(tg));
 const log = (b: string, event: string, detail: Record<string, unknown> = {}) => supabaseAdmin().from("sec_activity_logs").insert({ business_id: b, actor: "user", event, detail });
 
 async function authenticate(req: Request) {
@@ -59,12 +60,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
       admin.from("sec_settings").select("automation_enabled,dry_run,emergency_stop,reply_to_friends,reply_to_family,learn_style,tone_friend,tone_family").eq("business_id", id).single(),
       admin.from("sec_telegram_connections").select("status,mode,last_heartbeat_at").eq("business_id", id).maybeSingle(),
       admin.from("sec_knowledge").select("id,kind,title,content").eq("business_id", id).eq("active", true).order("created_at"),
-      admin.from("sec_owners").select("agreed_at").eq("tg_user_id", s.tg).maybeSingle(),
+      admin.from("sec_owners").select("agreed_at,approved").eq("tg_user_id", s.tg).maybeSingle(),
       admin.from("sec_activity_logs").select("id", { count: "exact", head: true }).eq("business_id", id).eq("event", "ai.test"),
     ]);
     const hours = (s.biz.business_hours as any)?.text ?? "";
     return json({ business: { name: s.biz.name, business_type: s.biz.business_type, tone: s.biz.tone, languages: s.biz.languages, hours },
-      settings, connection: conn, knowledge: (kb ?? []).filter((k) => k.kind !== "friend" && k.kind !== "family"), personal: (kb ?? []).filter((k) => k.kind === "friend" || k.kind === "family"), agreed: !!owner?.agreed_at, tested: (tests ?? 0) > 0,
+      settings, connection: conn, knowledge: (kb ?? []).filter((k) => k.kind !== "friend" && k.kind !== "family"), personal: (kb ?? []).filter((k) => k.kind === "friend" || k.kind === "family"), agreed: !!owner?.agreed_at, approved: !!owner?.approved || isAdmin(s.tg), isAdmin: isAdmin(s.tg), tested: (tests ?? 0) > 0,
       botUsername: process.env.PLATFORM_BOT_USERNAME ?? "qeltafaw_bot",
       workerOnline: !!conn?.last_heartbeat_at && Date.now() - new Date(conn.last_heartbeat_at).getTime() < 120_000 });
   }
@@ -82,6 +83,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
     const { data } = await admin.from("sec_conversations").select("id,last_message_preview,last_message_at,needs_attention,attention_reason,contact_kind,sec_customers(display_name)")
       .eq("business_id", id).order("last_message_at", { ascending: false, nullsFirst: false }).limit(25);
     return json({ chats: (data ?? []).map((c: any) => ({ id: c.id, name: c.sec_customers?.display_name ?? "", preview: c.last_message_preview, at: c.last_message_at, attention: c.needs_attention, reason: c.attention_reason, kind: c.contact_kind ?? null })) });
+  }
+  if (action === "admin_users") {   // account-level overview for the platform operator — never message contents
+    if (!isAdmin(s.tg)) return err("forbidden", 403);
+    const { data: owners } = await admin.from("sec_owners").select("tg_user_id,business_id,first_name,username,agreed_at,approved,created_at").order("created_at", { ascending: false }).limit(100);
+    const bizIds = (owners ?? []).map((o: any) => o.business_id).filter(Boolean);
+    const [{ data: biz }, { data: conns }, { data: sets }] = await Promise.all([
+      bizIds.length ? admin.from("sec_businesses").select("id,name,business_type").in("id", bizIds) : Promise.resolve({ data: [] as any[] }),
+      bizIds.length ? admin.from("sec_telegram_connections").select("business_id,status").in("business_id", bizIds) : Promise.resolve({ data: [] as any[] }),
+      bizIds.length ? admin.from("sec_settings").select("business_id,automation_enabled").in("business_id", bizIds) : Promise.resolve({ data: [] as any[] })]);
+    const since = new Date(Date.now() - 7 * 86400_000).toISOString();
+    const counts = await Promise.all(bizIds.map(async (b: string) => [b, (await admin.from("sec_messages").select("id", { count: "exact", head: true }).eq("business_id", b).eq("sender", "ai").eq("status", "sent").gte("created_at", since)).count ?? 0] as const));
+    const bm = new Map((biz ?? []).map((b: any) => [b.id, b])), cm = new Map((conns ?? []).map((c: any) => [c.business_id, c.status])), sm = new Map((sets ?? []).map((x: any) => [x.business_id, x.automation_enabled])), nm = new Map(counts);
+    return json({ users: (owners ?? []).map((o: any) => ({ tg: String(o.tg_user_id), name: o.first_name ?? "", username: o.username ?? "", business: bm.get(o.business_id)?.name ?? "", type: bm.get(o.business_id)?.business_type ?? "",
+      agreed: !!o.agreed_at, approved: !!o.approved, connection: cm.get(o.business_id) ?? "—", on: !!sm.get(o.business_id), replies7d: nm.get(o.business_id) ?? 0, at: o.created_at })) });
   }
   if (action === "leads") {
     const { data } = await admin.from("sec_followups").select("id,title,done,created_at,sec_customers(display_name)").eq("business_id", id).order("done").order("created_at", { ascending: false }).limit(30);
@@ -122,6 +137,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
     if ((count ?? 0) >= 100) return err("knowledge_limit_reached");
     const { data } = await admin.from("sec_knowledge").insert({ ...p.data, business_id: id }).select("id,kind,title,content").single();
     return json({ item: data });
+  }
+  if (action === "admin_set") {
+    if (!isAdmin(s.tg)) return err("forbidden", 403);
+    const a = z.object({ tg: z.string().regex(/^\d{3,15}$/), approved: z.boolean() }).safeParse(body); if (!a.success) return err("invalid_input");
+    const { data: ow } = await admin.from("sec_owners").select("business_id,agreed_at,bot_chat_id").eq("tg_user_id", a.data.tg).maybeSingle();
+    if (!ow) return err("not_found", 404);
+    await admin.from("sec_owners").update({ approved: a.data.approved, approved_at: a.data.approved ? new Date().toISOString() : null }).eq("tg_user_id", a.data.tg);
+    if (ow.business_id && (ow.agreed_at || !a.data.approved)) await admin.from("sec_settings").update({ automation_enabled: a.data.approved }).eq("business_id", ow.business_id);   // approve → go live (if they already agreed); suspend → stop
+    if (ow.business_id) await log(ow.business_id, a.data.approved ? "admin.approved" : "admin.suspended", { by: s.tg });
+    return json({ ok: true });
   }
   if (action === "lead_done") {
     const a = z.object({ id: z.string().uuid(), done: z.boolean() }).safeParse(body); if (!a.success) return err("invalid_input");
@@ -167,11 +192,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
     ]);
     if ((kb ?? 0) < 3) return err("add_at_least_3_knowledge_items");
     if ((tests ?? 0) < 1) return err("run_at_least_one_test");
-    await admin.from("sec_settings").update({ automation_enabled: true, dry_run: false, emergency_stop: false, reply_to_unknown_private: true, reply_to_contacts: true,
+    const { data: ow } = await admin.from("sec_owners").select("approved").eq("tg_user_id", s.tg).maybeSingle();
+    const approved = !!ow?.approved || isAdmin(s.tg);
+    if (approved && !ow?.approved) await admin.from("sec_owners").update({ approved: true, approved_at: new Date().toISOString() }).eq("tg_user_id", s.tg);
+    await admin.from("sec_settings").update({ automation_enabled: approved, dry_run: false, emergency_stop: false, reply_to_unknown_private: true, reply_to_contacts: true,
       launch_checklist: { reviewed_knowledge: true, tested_dry_run: true, understand_disclosure: true, allow_list_set: true, can_pause: true } }).eq("business_id", id);
     await admin.from("sec_businesses").update({ onboarding_completed: true }).eq("id", id);
     await admin.from("sec_owners").update({ agreed_at: new Date().toISOString() }).eq("tg_user_id", s.tg);
-    await log(id, "automation.live_enabled", { via: "mini_app_agreement" });
+    await log(id, approved ? "automation.live_enabled" : "automation.pending_approval", { via: "mini_app_agreement" });
     return json({ ok: true });
   }
   if (action === "prefs") {
