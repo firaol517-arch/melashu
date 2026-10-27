@@ -15,8 +15,10 @@ export default function MiniApp() {
   const [editProfile, setEditProfile] = useState(false); const [tab, setTab] = useState<"home" | "teach" | "chats" | "profile" | "users">("home"); const [busy, setBusy] = useState(false);
 
   const call = useCallback(async (path: string, method = "GET", body?: unknown) => {
-    const r = await fetch(`/api/tg/${path}`, { method, headers: { "content-type": "application/json", authorization: `Bearer ${token.current}` }, body: body ? JSON.stringify(body) : undefined });
-    const j = await r.json().catch(() => ({})); return { ok: r.ok, data: j as any };
+    try {
+      const r = await fetch(`/api/tg/${path}`, { method, headers: { "content-type": "application/json", authorization: `Bearer ${token.current}` }, body: body ? JSON.stringify(body) : undefined });
+      const j = await r.json().catch(() => ({})); return { ok: r.ok, data: j as any };
+    } catch { return { ok: false, data: { error: "network" } as any }; }          // a dropped connection must never leave a button disabled forever
   }, []);
   const load = useCallback(async () => { const r = await call("me"); if (r.ok) setMe(r.data); return r.data as Me; }, [call]);
 
@@ -62,7 +64,7 @@ function Wizard({ me, step, setStep, call, reload, busy, setBusy }: P & { step: 
   const [ok, setOk] = useState({ disclosure: false, reviewed: false, can_pause: false });
   const [testedNow, setTestedNow] = useState(false);
   const titles = ["ስለ ንግድህ", "አስተምረኝ", "ሞክረኝ", "ስምምነት", "አገናኝ"];
-  const tryStep = async (fn: () => Promise<{ ok: boolean; data: any }>, next: number) => { setBusy(true); setMsg(""); const r = await fn(); setBusy(false);
+  const tryStep = async (fn: () => Promise<{ ok: boolean; data: any }>, next: number) => { setBusy(true); setMsg(""); let r: { ok: boolean; data: any }; try { r = await fn(); } catch { r = { ok: false, data: { error: "network" } }; } finally { setBusy(false); }
     if (!r.ok) { setMsg(({ add_at_least_3_knowledge_items: "ቢያንስ 3 መረጃ ጨምር።", run_at_least_one_test: "መጀመሪያ አንድ ሙከራ አድርግ።", invalid_input: "መረጃውን በትክክል ሙላ።" } as any)[r.data?.error] ?? `ስህተት ተፈጥሯል (${r.data?.error ?? "network"})። እንደገና ሞክር።`); return; }
     await reload(); setStep(next); };
   return (
@@ -83,7 +85,7 @@ function Wizard({ me, step, setStep, call, reload, busy, setBusy }: P & { step: 
         <p className="text-sm text-sage">ደንበኞች የሚጠይቁትን ዋና ነገሮች ጻፍ፦ ምርቶች፣ ዋጋ፣ አገልግሎት፣ ተደጋጋሚ ጥያቄዎች። ረዳቱ ከዚህ ብቻ ይመልሳል፤ የሌለውን አይፈጥርም። <b>ቢያንስ 3</b> (አሁን {me.knowledge.length})።</p>
         <KnowledgeEditor me={me} call={call} reload={reload} />
         {msg && <p className="text-sm text-danger">{msg}</p>}
-        <button className="btn btn-primary w-full" disabled={busy || me.knowledge.length < 3} onClick={() => setStep(2)}>ቀጥል</button></div>)}
+        <button className="btn btn-primary w-full" disabled={me.knowledge.length < 3} onClick={() => setStep(2)}>ቀጥል</button></div>)}
       {step === 2 && (<div className="space-y-3"><TestBox call={call} reload={reload} onTested={() => setTestedNow(true)} />
         <p className="text-xs text-sage">አንድ ጥያቄ ሞክረህ መልስ ሲመጣ "ቀጥል" ይበራል። ረዳቱ "አያውቅም" ካለ ችግር የለም፤ ጥያቄው ከጻፍከው መረጃ ውጭ ነው ማለት ነው።</p>
         <button className="btn btn-primary w-full" disabled={!me.tested && !testedNow} onClick={() => setStep(3)}>ቀጥል</button></div>)}
