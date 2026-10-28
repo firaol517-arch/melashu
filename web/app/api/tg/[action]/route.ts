@@ -22,6 +22,17 @@ async function session(req: Request) {
   return data ? { tg: s.tg, biz: data } : null;
 }
 const isAdmin = (tg: number | string) => (process.env.ADMIN_TG_IDS ?? "").split(",").map((x) => x.trim()).filter(Boolean).includes(String(tg));
+/** Tell the platform operator(s) about signups, via the platform bot (they must have opened the bot once so a chat exists). Never throws. */
+async function notifyAdmins(text: string) {
+  try {
+    const token = (process.env.PLATFORM_BOT_TOKEN ?? "").replace(/\s+/g, "").replace(/^["']|["']$/g, "");
+    const ids = (process.env.ADMIN_TG_IDS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    if (!token || !ids.length) return;
+    const { data } = await supabaseAdmin().from("sec_owners").select("bot_chat_id").in("tg_user_id", ids).not("bot_chat_id", "is", null);
+    await Promise.all((data ?? []).map((o: any) => fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: o.bot_chat_id, text }), signal: AbortSignal.timeout(5000) }).catch(() => {})));
+  } catch { /* best effort */ }
+}
 const log = (b: string, event: string, detail: Record<string, unknown> = {}) => supabaseAdmin().from("sec_activity_logs").insert({ business_id: b, actor: "user", event, detail });
 
 async function authenticate(req: Request) {
@@ -41,6 +52,7 @@ async function authenticate(req: Request) {
     await admin.from("sec_telegram_connections").insert({ business_id: biz.id, mode: "business" });
     await admin.from("sec_owners").update({ business_id: biz.id }).eq("tg_user_id", u.id);
     await log(biz.id, "tg.business_created");
+    await notifyAdmins(`🆕 አዲስ ተመዝጋቢ፦ ${u.first_name ?? "—"}${u.username ? ` (@${u.username})` : ""}\nአሁን ንግዱን እያዘጋጀ ነው።`);
   } else await admin.from("sec_owners").update({ business_id: biz.id }).eq("tg_user_id", u.id);
   return json({ token: signSession({ tg: u.id, biz: biz.id }, hmacKey()), user: { id: u.id, name: u.first_name ?? "" } });
 }
@@ -211,6 +223,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
     await admin.from("sec_businesses").update({ onboarding_completed: true }).eq("id", id);
     await admin.from("sec_owners").update({ agreed_at: new Date().toISOString() }).eq("tg_user_id", s.tg);
     await log(id, approved ? "automation.live_enabled" : "automation.pending_approval", { via: "mini_app_agreement" });
+    if (!approved) await notifyAdmins(`⏳ ፈቃድህን ይጠብቃል፦ ${s.biz.name} (${s.biz.business_type || "—"})\nስምምነት ሰጥቷል። አፑን ክፈት → ተጠቃሚዎች → ✅ ፍቀድ።`);
     return json({ ok: true });
   }
   if (action === "prefs") {
